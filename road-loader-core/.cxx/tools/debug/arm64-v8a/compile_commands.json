@@ -1,0 +1,42 @@
+[
+{
+  "directory": "/workspace/project/RoadLoader/road-loader-core/.cxx/Debug/3z30613f/arm64-v8a",
+  "command": "/workspace/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android26 --sysroot=/workspace/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DPL_ENABLE_GL=1 -Droadloader32_EXPORTS -I/workspace/project/RoadLoader/road_loader_32/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -fno-limit-debug-info  -fPIC -Wall -Wextra -Wpedantic -fvisibility=hidden -fstack-protector-strong -std=c++17 -o CMakeFiles/roadloader32.dir/src/jni/JniBridge32.cpp.o -c /workspace/project/RoadLoader/road_loader_32/src/jni/JniBridge32.cpp",
+  "file": "/workspace/project/RoadLoader/road_loader_32/src/jni/JniBridge32.cpp"
+},
+{
+  "directory": "/workspace/project/RoadLoader/road-loader-core/.cxx/Debug/3z30613f/arm64-v8a",
+  "command": "/workspace/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android26 --sysroot=/workspace/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DPL_ENABLE_GL=1 -Droadloader32_EXPORTS -I/workspace/project/RoadLoader/road_loader_32/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -fno-limit-debug-info  -fPIC -Wall -Wextra -Wpedantic -fvisibility=hidden -fstack-protector-strong -std=c++17 -o CMakeFiles/roadloader32.dir/src/pl/ipc/SharedRegion.cpp.o -c /workspace/project/RoadLoader/road_loader_32/src/pl/ipc/SharedRegion.cpp",
+  "file": "/workspace/project/RoadLoader/road_loader_32/src/pl/ipc/SharedRegion.cpp"
+},
+{
+  "directory": "/workspace/project/RoadLoader/road-loader-core/.cxx/Debug/3z30613f/arm64-v8a",
+  "command": "/workspace/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android26 --sysroot=/workspace/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DPL_ENABLE_GL=1 -Droadloader32_EXPORTS -I/workspace/project/RoadLoader/road_loader_32/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -fno-limit-debug-info  -fPIC -Wall -Wextra -Wpedantic -fvisibility=hidden -fstack-protector-strong -std=c++17 -o CMakeFiles/roadloader32.dir/src/pl/memory/Signature.cpp.o -c /workspace/project/RoadLoader/road_loader_32/src/pl/memory/Signature.cpp",
+  "file": "/workspace/project/RoadLoader/road_loader_32/src/pl/memory/Signature.cpp"
+},
+{
+  "directory": "/workspace/project/RoadLoader/road-loader-core/.cxx/Debug/3z30613f/arm64-v8a",
+  "command": "/workspace/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android26 --sysroot=/workspace/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DPL_ENABLE_GL=1 -Droadloader32_EXPORTS -I/workspace/project/RoadLoader/road_loader_32/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -fno-limit-debug-info  -fPIC -Wall -Wextra -Wpedantic -fvisibility=hidden -fstack-protector-strong -std=c++17 -o CMakeFiles/roadloader32.dir/src/pl/memory/ModuleMap.cpp.o -c /workspace/project/RoadLoader/road_loader_32/src/pl/memory/ModuleMap.cpp",
+  "file": "/workspace/project/RoadLoader/road_loader_32/src/pl/memory/ModuleMap.cpp"
+},
+{
+  "directory": "/workspace/project/RoadLoader/road-loader-core/.cxx/Debug/3z30613f/arm64-v8a",
+  "command": "/workspace/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android26 --sysroot=/workspace/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DPL_ENABLE_GL=1 -Droadloader32_EXPORTS -I/workspace/project/RoadLoader/road_loader_32/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -fno-limit-debug-info  -fPIC -Wall -Wextra -Wpedantic -fvisibility=hidden -fstack-protector-strong -std=c++17 -o CMakeFiles/roadloader32.dir/src/pl/memory/AllocatorOverride.cpp.o -c /workspace/project/RoadLoader/road_loader_32/src/pl/memory/AllocatorOverride.cpp",
+  "file": "/workspace/project/RoadLoader/road_loader_32/src/pl/memory/AllocatorOverride.cpp"
+},
+{
+  "directory": "/workspace/project/RoadLoader/road-loader-core/.cxx/Debug/3z30613f/arm64-v8a",
+  "command": "/workspace/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android26 --sysroot=/workspace/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DPL_ENABLE_GL=1 -Droadloader32_EXPORTS -I/workspace/project/RoadLoader/road_loader_32/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -fno-limit-debug-info  -fPIC -Wall -Wextra -Wpedantic -fvisibility=hidden -fstack-protector-strong -std=c++17 -o CMakeFiles/roadloader32.dir/src/pl/hooks/ArmRelocator.cpp.o -c /workspace/project/RoadLoader/road_loader_32/src/pl/hooks/ArmRelocator.cpp",
+  "file": "/workspace/project/RoadLoader/road_loader_32/src/pl/hooks/ArmRelocator.cpp"
+},
+{
+  "directory": "/workspace/project/RoadLoader/road-loader-core/.cxx/Debug/3z30613f/arm64-v8a",
+  "command": "/workspace/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android26 --sysroot=/workspace/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DPL_ENABLE_GL=1 -Droadloader32_EXPORTS -I/workspace/project/RoadLoader/road_loader_32/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -fno-limit-debug-info  -fPIC -Wall -Wextra -Wpedantic -fvisibility=hidden -fstack-protector-strong -std=c++17 -o CMakeFiles/roadloader32.dir/src/pl/hooks/InlineHook.cpp.o -c /workspace/project/RoadLoader/road_loader_32/src/pl/hooks/InlineHook.cpp",
+  "file": "/workspace/project/RoadLoader/road_loader_32/src/pl/hooks/InlineHook.cpp"
+},
+{
+  "directory": "/workspace/project/RoadLoader/road-loader-core/.cxx/Debug/3z30613f/arm64-v8a",
+  "command": "/workspace/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android26 --sysroot=/workspace/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DPL_ENABLE_GL=1 -Droadloader32_EXPORTS -I/workspace/project/RoadLoader/road_loader_32/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -fno-limit-debug-info  -fPIC -Wall -Wextra -Wpedantic -fvisibility=hidden -fstack-protector-strong -std=c++17 -o CMakeFiles/roadloader32.dir/src/pl/runtime/GameHooks.cpp.o -c /workspace/project/RoadLoader/road_loader_32/src/pl/runtime/GameHooks.cpp",
+  "file": "/workspace/project/RoadLoader/road_loader_32/src/pl/runtime/GameHooks.cpp"
+}
+]

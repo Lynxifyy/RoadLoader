@@ -1,0 +1,16 @@
+[package]
+name = "road_core_32"
+version = "2.1.0"
+edition = "2021"
+rust-version = "1.77"
+description = "Road Loader 32-bit companion core (IPC, math, meshing, physics)"
+license = "MIT"
+
+[lib]
+name = "road_core_32"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+libc = "0.2"
+glam = { version = "0.29", default-features = false, features = ["libm"] }
+mimalloc = { version = "0.1", default-features = false }

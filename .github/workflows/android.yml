@@ -1,0 +1,71 @@
+name: android
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: armv7-linux-androideabi,aarch64-linux-android
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK and platform
+        run: |
+          yes | sdkmanager --licenses > /dev/null
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+
+      - name: Configure local.properties
+        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+
+      - name: Rust unit tests
+        run: cd rust && cargo test --workspace
+
+      - name: Cross-compile the Rust core
+        run: scripts/build_rust.sh release
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.2.12479018
+
+      - name: C++ host tests
+        run: scripts/run_host_tests.sh
+
+      - name: Build APKs and run unit tests
+        run: ./gradlew --no-daemon :app:assembleDebug :satellite:assembleDebug :road-loader-core:testDebugUnitTest
+
+      - name: Verify both ABIs are packaged
+        run: |
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -q "lib/arm64-v8a/libroadloader32.so"
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -q "lib/armeabi-v7a/libroad_core_32.so"
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: roadloader-apks
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            satellite/build/outputs/apk/debug/satellite-debug.apk

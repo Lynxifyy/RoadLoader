@@ -1,0 +1,18 @@
+# Gradle / Android
+.gradle/
+build/
+*/build/
+local.properties
+.idea/
+*.iml
+captures/
+
+# Rust
+rust/target/
+
+# Native artifacts staged by scripts/build_rust.sh
+road-loader-core/src/main/jniLibs/
+
+# Agent scratch
+.openhands/
+.DS_Store

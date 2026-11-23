@@ -1,0 +1,7 @@
+# Android loads companion libraries by file name from the APK's lib directory;
+# a SONAME keeps DT_NEEDED relative instead of embedding the build path.
+[target.armv7-linux-androideabi]
+rustflags = ["-C", "link-arg=-Wl,-soname,libroad_core_32.so"]
+
+[target.aarch64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,-soname,libroad_core_32.so"]

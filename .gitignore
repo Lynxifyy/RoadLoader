@@ -7,6 +7,10 @@ local.properties
 *.iml
 captures/
 
+# NDK build trees
+.cxx/
+**/.cxx/
+
 # Rust
 rust/target/
 

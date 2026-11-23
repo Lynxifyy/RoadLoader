@@ -34,6 +34,10 @@ add_executable(road_host_tests
 
 target_include_directories(road_host_tests PRIVATE ../include)
 target_compile_options(road_host_tests PRIVATE -Wall -Wextra -Wpedantic)
+# The allocator test replaces operator new/delete. Without -rdynamic those
+# definitions stay out of the dynamic symbol table and the PLT resolves to
+# libstdc++ instead, so the test would silently measure the wrong allocator.
+target_link_options(road_host_tests PRIVATE -rdynamic)
 target_link_libraries(road_host_tests PRIVATE
   "${ROAD_CORE_LIB_DIR}/libroad_core_32.so"
   dl

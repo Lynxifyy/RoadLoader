@@ -23,13 +23,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # A repository without Pages enabled cannot deploy. Report it instead of
+      # failing the branch; enable Pages under Settings > Pages (source:
+      # GitHub Actions) and the next push publishes the site.
+      - name: Check Pages configuration
+        id: pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh api "repos/${{ github.repository }}/pages" > /dev/null 2>&1; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Pages not enabled::Enable Pages in Settings > Pages with source 'GitHub Actions' to publish docs/."
+          fi
+
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
+        if: steps.pages.outputs.enabled == 'true'
+
       - uses: actions/jekyll-build-pages@v1
+        if: steps.pages.outputs.enabled == 'true'
         with:
           source: ./docs
           destination: ./_site
+
       - uses: actions/upload-pages-artifact@v3
+        if: steps.pages.outputs.enabled == 'true'
+
       - id: deployment
+        if: steps.pages.outputs.enabled == 'true'
         uses: actions/deploy-pages@v4

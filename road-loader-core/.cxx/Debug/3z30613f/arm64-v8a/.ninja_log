@@ -23,3 +23,5 @@
 5	606	1795421239567451266	CMakeFiles/roadloader32.dir/src/pl/runtime/GameHooks.cpp.o	dd1b394623aee1f7
 606	636	1795421239600451240	/workspace/project/RoadLoader/road-loader-core/build/intermediates/cxx/Debug/3z30613f/obj/arm64-v8a/libroadloader32.so	c9c7904757d1f451
 6	40	1795422203505691110	/workspace/project/RoadLoader/road-loader-core/build/intermediates/cxx/Debug/3z30613f/obj/arm64-v8a/libroadloader32.so	c9c7904757d1f451
+5	63	1795422879121159005	CMakeFiles/roadloader32.dir/src/pl/memory/AllocatorOverride.cpp.o	ce2be50e4cba07b2
+63	92	1795422879150158982	/workspace/project/RoadLoader/road-loader-core/build/intermediates/cxx/Debug/3z30613f/obj/arm64-v8a/libroadloader32.so	c9c7904757d1f451

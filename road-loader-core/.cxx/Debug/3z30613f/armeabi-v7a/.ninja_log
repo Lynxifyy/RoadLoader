@@ -23,3 +23,5 @@
 4	590	1795421240219450752	CMakeFiles/roadloader32.dir/src/jni/JniBridge32.cpp.o	4a8832d35eeb3b67
 590	621	1795421240253450725	/workspace/project/RoadLoader/road-loader-core/build/intermediates/cxx/Debug/3z30613f/obj/armeabi-v7a/libroadloader32.so	2fb1bf8bcf887a4e
 4	34	1795422203575691055	/workspace/project/RoadLoader/road-loader-core/build/intermediates/cxx/Debug/3z30613f/obj/armeabi-v7a/libroadloader32.so	2fb1bf8bcf887a4e
+4	49	1795422879236158914	CMakeFiles/roadloader32.dir/src/pl/memory/AllocatorOverride.cpp.o	c93ea842f0e92317
+49	81	1795422879267158890	/workspace/project/RoadLoader/road-loader-core/build/intermediates/cxx/Debug/3z30613f/obj/armeabi-v7a/libroadloader32.so	2fb1bf8bcf887a4e

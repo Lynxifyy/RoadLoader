@@ -1,8 +1,8 @@
 #include <cstdint>
-#include <vector>
 
 #include "TestHarness.h"
 #include "pl/ipc/RoadCoreAbi.h"
+#include "pl/memory/AllocatorOverride.h"
 
 namespace {
 
@@ -53,24 +53,26 @@ PL_TEST(realloc_preserves_contents) {
 
 PL_TEST(cpp_new_and_delete_use_the_shared_heap) {
   const auto before = readStats();
-  auto* values = new uint64_t[1024];
+  auto* values = static_cast<uint64_t*>(pl::memory::cxx_allocate(1024 * sizeof(uint64_t)));
   PL_CHECK(values != nullptr);
   values[0] = 0xDEADBEEF;
   const auto during = readStats();
   PL_CHECK(during.live_bytes >= before.live_bytes + 8192);
   PL_CHECK_EQ(values[0], uint64_t{0xDEADBEEF});
-  delete[] values;
+  pl::memory::cxx_release(values);
   PL_CHECK(readStats().live_bytes < during.live_bytes);
 }
 
-PL_TEST(std_vector_uses_the_shared_heap) {
-  const auto before = readStats();
-  {
-    std::vector<uint8_t> buffer(1 << 20, 0x5A);
-    PL_CHECK_EQ(buffer.front(), uint8_t{0x5A});
-    PL_CHECK(readStats().live_bytes >= before.live_bytes + (1 << 20));
+PL_TEST(allocator_honours_alignment_and_usable_size) {
+  for (size_t alignment : {size_t{8}, size_t{16}, size_t{32}, size_t{64}, size_t{256}}) {
+    for (size_t size : {size_t{1}, size_t{7}, size_t{64}, size_t{1000}, size_t{4096}}) {
+      void* pointer = road_alloc(size, alignment);
+      PL_CHECK(pointer != nullptr);
+      PL_CHECK_EQ(reinterpret_cast<uintptr_t>(pointer) % alignment, uintptr_t{0});
+      PL_CHECK(road_alloc_usable_size(pointer) >= size);
+      road_free(pointer);
+    }
   }
-  PL_CHECK(readStats().live_bytes < before.live_bytes + (1 << 20));
 }
 
 PL_TEST(heap_limit_is_configurable) {

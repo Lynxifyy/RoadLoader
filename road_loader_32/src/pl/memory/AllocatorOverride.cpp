@@ -7,6 +7,15 @@
 #include <new>
 
 #include "pl/ipc/RoadCoreAbi.h"
+#include "pl/memory/AllocatorOverride.h"
+
+namespace pl::memory {
+
+void* cxx_allocate(std::size_t size) { return ::operator new(size); }
+
+void cxx_release(void* pointer) noexcept { ::operator delete(pointer); }
+
+}  // namespace pl::memory
 
 void* operator new(std::size_t size) {
   if (size == 0) {

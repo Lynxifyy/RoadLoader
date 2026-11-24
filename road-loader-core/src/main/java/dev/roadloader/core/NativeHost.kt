@@ -35,7 +35,11 @@ object NativeHost {
     external fun pushCommand(handle: Long, kind: Int, value: Long): Int
     external fun pushCommandPayload(handle: Long, kind: Int, value: Long, payload: ByteArray?): Int
     external fun pollEvent(handle: Long): String?
-    external fun popAudio(handle: Long, out: ByteArray): Int
+    /**
+     * Copies the next audio block into [out] and, when [meta] has room, fills it
+     * with `[frames, channels, sampleRate, timestampNs]`.
+     */
+    external fun popAudio(handle: Long, out: ByteArray, meta: LongArray): Int
     external fun stats(handle: Long, out: LongArray): Int
     external fun selfTest(handle: Long): Int
     external fun destroySession(handle: Long)

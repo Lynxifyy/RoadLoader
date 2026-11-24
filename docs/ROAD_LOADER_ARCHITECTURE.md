@@ -298,14 +298,55 @@ cross-mapping audio test and the ring-buffer stress tests.
 ## 8. Audio bridge
 
 The companion packs interleaved f32 PCM into 4096-byte `AudioBlock`s (32-byte
-header + 4064 bytes, about 21 ms of 48 kHz stereo). The UI pops blocks on a
-`THREAD_PRIORITY_URGENT_AUDIO`-equivalent thread (`Thread.MAX_PRIORITY`), writes
-them through a direct `ByteBuffer` (float PCM cannot be written from a
-`ByteArray`) and releases the track on stop. If the device has no float sink the
-bridge keeps draining so the ring never fills, and the UI reports why audio is
-silent instead of dropping blocks silently.
+header + 4064 bytes = 508 stereo frames, 10.58 ms at 48 kHz). The ring holds 64
+of them, 677 ms.
 
-Volume is set with `CMD_SET_VOLUME` (0-1000) from the UI.
+### The producer runs on a schedule, not on demand
+
+`AudioPacer` emits one block per 10.58 ms whether or not anything is audible,
+and a silent block is still a block. That is what an engine's audio callback
+does, and it is what keeps the 64-bit `AudioTrack` fed: a producer that only
+writes when a sound starts leaves the track in `PLAYSTATE_PLAYING` with an empty
+buffer, which is exactly the state that logs `releaseBuffer() ... disabled due
+to previous underrun, restarting`.
+
+The deadline advances by one period per block (`next += period`, not
+`next = now + period`), so a late tick does not shift the stream: 60 s of audio
+is 60 s of audio, not 59.9. After a stall the pacer emits at most four blocks
+and resynchronises rather than replaying the backlog, and counts the periods it
+skipped. Tone phase is carried across blocks so a 21 ms demo tone does not
+click.
+
+### The consumer measures instead of assuming
+
+`RoadAudioBridge` sizes the track buffer to at least four blocks
+(`AudioPolicy.bufferBytes`, rounded to whole blocks so a block never straddles
+the buffer wrap), primes three blocks before `play()`, raises its own thread to
+`THREAD_PRIORITY_URGENT_AUDIO` with `Process.setThreadPriority` (a Java
+`Thread.priority` hint does not do this), and then reports:
+
+| Field | Meaning |
+| --- | --- |
+| `underruns` | `AudioTrack.getUnderrunCount()` - the device's own count |
+| `empty` | polls that found the ring empty |
+| `played` | blocks written to the track |
+| `age` | milliseconds between block production and hand-off |
+| format | `48k/2ch` as reported by the block itself |
+
+The block carries its own `frames`, `channels`, `sample_rate` and
+`timestamp_ns` through JNI (`popAudio(handle, bytes, meta)`), so the consumer
+never has to assume a format. A block whose format the track cannot interpret
+stops the bridge with a message instead of playing noise, and the producer's
+`timestamp_ns` is what makes `age` a measurement rather than a guess.
+
+Volume is set with `CMD_SET_VOLUME` (0-1000) from the UI and applied by the
+producer, so there is one mixer and one place where gain is decided. The UI
+re-sends its volume to every new companion, because a fresh companion starts at
+full volume.
+
+If the device has no float sink the bridge keeps draining so the ring never
+fills, and the UI reports why audio is silent instead of dropping blocks
+silently.
 
 ## 9. Shader injection
 

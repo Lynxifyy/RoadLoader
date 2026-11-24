@@ -119,7 +119,8 @@ class RoadSession private constructor(
     fun pollEvent(): String? = if (closed) null else NativeHost.pollEvent(handle)
 
     /** Pops one audio block into [buffer]; returns the byte count. */
-    fun popAudio(buffer: ByteArray): Int = if (closed) 0 else NativeHost.popAudio(handle, buffer)
+    fun popAudio(buffer: ByteArray, meta: LongArray): Int =
+        if (closed) 0 else NativeHost.popAudio(handle, buffer, meta)
 
     fun readStats(): RoadStats {
         if (!closed) NativeHost.stats(handle, statsValues)

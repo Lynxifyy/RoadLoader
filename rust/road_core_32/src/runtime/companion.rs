@@ -15,7 +15,7 @@ use crate::assets::{
     ASSET_STATUS_INCOMPLETE, ASSET_STATUS_LENGTH_MISMATCH, ASSET_STATUS_NO_BEGIN,
     ASSET_STATUS_OK, ASSET_STATUS_PENDING, ASSET_STATUS_TOTAL, MAX_ASSET_CHUNKS,
 };
-use crate::audio::AudioBridge;
+use crate::audio::AudioPacer;
 use crate::crash;
 use crate::ipc::layout::{
     Command, CMD_ASSET_BEGIN, CMD_ASSET_CHUNK, CMD_ASSET_COMMIT, CMD_PATCH_OFFSET,
@@ -33,6 +33,10 @@ use crate::util::crc32;
 const FRAME_INTERVAL: Duration = Duration::from_nanos(16_666_667);
 const HEARTBEAT_INTERVAL: Duration = Duration::from_millis(100);
 const STATS_INTERVAL: Duration = Duration::from_millis(250);
+/// A full audio ring is worth one log line per second, not one per block.
+const AUDIO_DROP_LOG_INTERVAL: Duration = Duration::from_secs(1);
+/// Demo tone length in frames: about 21 ms at 48 kHz.
+const DEMO_TONE_FRAMES: usize = 1024;
 
 pub const TEST_MESH: u32 = 1 << 0;
 pub const TEST_MATH: u32 = 1 << 1;
@@ -410,8 +414,9 @@ fn run(region: Arc<Region>, stop: Arc<AtomicBool>, flags: u32) {
 
     let mut scene = Scene::new(width, height, safe_mode);
     scene.set_self_test(mask);
-    let mut audio = AudioBridge::new(48_000, 2);
+    let mut pacer = AudioPacer::new(48_000, 2);
     let mut next_frame = Instant::now();
+    let mut last_audio_drop_log = Instant::now();
     let mut last_heartbeat = Instant::now();
     let mut last_stats = Instant::now();
     let mut render_avg_us: u32 = 0;
@@ -446,7 +451,7 @@ fn run(region: Arc<Region>, stop: Arc<AtomicBool>, flags: u32) {
                 _ => {}
             }
             if event.kind == INPUT_KIND_DOWN {
-                push_tone(&region, &mut audio, handler.volume());
+                pacer.trigger_tone(DEMO_TONE_FRAMES);
             }
         }
 
@@ -454,6 +459,19 @@ fn run(region: Arc<Region>, stop: Arc<AtomicBool>, flags: u32) {
         while let Some(command) = region.pop_command() {
             if handler.handle(&command, &region, &mut scene) {
                 stop.store(true, Ordering::Release);
+            }
+        }
+
+        // Audio keeps its own schedule: one block per 10.58 ms, silence
+        // included. A block produced only when a sound starts would leave the
+        // 64-bit AudioTrack playing an empty buffer, which is what makes it log
+        // underruns.
+        pacer.set_volume(handler.volume());
+        for block in pacer.tick(crate::util::monotonic_ns()) {
+            if !region.push_audio(*block) && last_audio_drop_log.elapsed() >= AUDIO_DROP_LOG_INTERVAL {
+                last_audio_drop_log = Instant::now();
+                let dropped = region.stats().audio_dropped;
+                region.log(2, &format!("audio ring full ({dropped} blocks dropped)"));
             }
         }
 
@@ -500,27 +518,6 @@ fn run(region: Arc<Region>, stop: Arc<AtomicBool>, flags: u32) {
     region.heartbeat();
     region.log(3, "companion stopped");
     let _ = frames_since_stats;
-}
-
-/// Generates a short 440 Hz stereo tone and pushes it into the audio ring.
-/// This is the demo payload for the audio bridge; the real path is fed by the
-/// `SoundEngine::play` hook.
-fn push_tone(region: &Region, bridge: &mut AudioBridge, volume: f32) {
-    if volume <= 0.0 {
-        return;
-    }
-    let sample_rate = 48_000u32;
-    let frames = 1024usize;
-    let mut samples = Vec::with_capacity(frames * 2);
-    for frame in 0..frames {
-        let phase = frame as f32 / sample_rate as f32 * 440.0 * std::f32::consts::TAU;
-        let value = phase.sin() * 0.15 * volume;
-        samples.push(value);
-        samples.push(value);
-    }
-    for block in bridge.push_f32(&samples) {
-        let _ = region.push_audio(block);
-    }
 }
 
 #[cfg(test)]
@@ -740,13 +737,29 @@ mod tests {
     }
 
     #[test]
-    fn tone_is_pushed_as_audio_blocks() {
+    fn a_triggered_tone_reaches_the_audio_ring() {
         let region = Region::create(64, 48).expect("region");
-        let mut bridge = AudioBridge::new(48_000, 2);
-        push_tone(&region, &mut bridge, 1.0);
+        let mut pacer = AudioPacer::new(48_000, 2);
+        pacer.trigger_tone(DEMO_TONE_FRAMES);
+        for block in pacer.tick(1_000_000) {
+            assert!(region.push_audio(*block));
+        }
         let block = region.pop_audio().expect("audio block");
         assert_eq!(block.channels, 2);
         assert_eq!(block.sample_rate, 48_000);
-        assert!(block.length > 0);
+        assert_eq!(block.length as usize, crate::ipc::layout::AUDIO_DATA_SIZE);
+        assert!(block.data.iter().any(|&byte| byte != 0), "the tone must carry samples");
+    }
+
+    #[test]
+    fn silence_is_still_a_block() {
+        let region = Region::create(64, 48).expect("region");
+        let mut pacer = AudioPacer::new(48_000, 2);
+        for block in pacer.tick(1_000_000) {
+            assert!(region.push_audio(*block));
+        }
+        let block = region.pop_audio().expect("idle audio block");
+        assert!(block.data.iter().all(|&byte| byte == 0));
+        assert_eq!(region.stats().audio_pushed, 1);
     }
 }

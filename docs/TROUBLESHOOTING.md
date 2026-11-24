@@ -53,10 +53,27 @@ blocks launching until *Reset guard*.
 
 ## Audio is silent
 
-The overlay reports the reason next to `audio pushed/played`. If the device has
-no float PCM sink the bridge drains blocks and reports
-`Audio sink unavailable`. Volume starts at 50; use the volume command to change
-it.
+Developer mode shows the audio health line: `underruns N | empty N | played N |
+age Xms | 48k/2ch`.
+
+* `no float PCM output` - the device has no float sink; the bridge drains so the
+  ring never fills. Nothing is wrong with the companion.
+* `played 0` with `pushed` climbing - the consumer is not popping. Check that the
+  bridge started (`Audio sink unavailable: ...` appears in the log when it did
+  not).
+* `companion sends 44k/1ch, track expects 48k/2ch` - the producer changed format
+  without the consumer. The bridge stops rather than play noise.
+* `age` above ~100 ms - the consumer is not keeping up, or the companion thread
+  is starved.
+* `Volume` cycles 100% / 50% / 0% through `CMD_SET_VOLUME`.
+
+## Audio crackles or logs underruns
+
+`underruns` is the device's own `AudioTrack.getUnderrunCount()`, so a non-zero
+value is playback that actually broke. The M5 run holds at 0 over 60 s because
+the companion emits a block every 10.58 ms including silence; if it climbs,
+the producer stopped (check `pushed` against the heartbeat) or the ring filled
+(`audio ring full (N blocks dropped)` in the event log means nothing is popping).
 
 ## Input does nothing
 

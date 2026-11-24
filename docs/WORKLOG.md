@@ -450,3 +450,101 @@ block along with the session.
   the path that will carry them once a scanner resolves them on device.
 * The satellite refuses to install on a 64-bit-only device; still no device to
   exercise that path.
+
+## M5 - Audio that does not underrun, measured on the phone
+
+### Finding
+
+The M3 device run recorded `AudioTrack` logging `releaseBuffer() ... disabled
+due to previous underrun, restarting` twice. The cause was not a slow consumer:
+it was that **the companion only produced audio when a touch arrived**. Between
+taps the 64-bit track stayed in `PLAYSTATE_PLAYING` with nothing to play, so it
+ran dry by definition.
+
+The second cause was only visible once the first was fixed. A consumer that pops
+one block and writes it can never hold more than what the producer has just
+made, so the track sat **one block deep** (10.58 ms) no matter how large its
+buffer was. The first M5 device run measured it: `underruns 3`, `age 215ms`,
+with the log showing `underrun: 1 (age 4ms, played 3248)` - a 10 ms margin and a
+215 ms backlog at the same time, which is the signature of a buffer that is deep
+but never filled.
+
+### What changed
+
+* **The producer runs on a clock.** `AudioPacer` emits one block per 10.58 ms
+  (508 stereo frames at 48 kHz), silence included, which is what an engine's
+  audio callback does. The deadline advances by exactly one period per block, so
+  60 s of ticks yields 60 s of audio (tested); after a stall it emits at most
+  four blocks and resynchronises instead of replaying the backlog, and counts
+  the periods it skipped. Tone phase carries across blocks, so the 21 ms demo
+  tone does not click.
+* **The consumer keeps the track full.** `RoadAudioBridge` primes three real
+  blocks, then pads with silence to a five-block (53 ms) target before `play()`.
+  Whenever the level drops below the target - at start-up or after a stall - it
+  refills, so the track is never one block deep. The level is measured, not
+  assumed: `written bytes - playbackHeadPosition * 8`.
+* **Latency is bounded.** A block older than 60 ms is skipped (up to eight per
+  pass) instead of being played late, so a deep queue cannot turn into sound
+  that trails the picture. Skipped blocks are counted.
+* **The block carries its own format and birth time.** JNI `popAudio` now fills
+  `[frames, channels, sampleRate, timestampNs]`; the consumer validates the
+  format and stops with a message rather than play samples the track cannot
+  interpret, and `age` is a measurement instead of a guess.
+* **The thread is really in the audio band.** `Process.setThreadPriority(
+  THREAD_PRIORITY_URGENT_AUDIO)` inside the thread; the old `Thread.priority`
+  assignment is only a JVM hint.
+* **Volume has one owner.** `CMD_SET_VOLUME` scales the producer's mix, the UI
+  cycles 100/50/0 with a `Volume` button, and the chosen level is re-sent to
+  every new companion (a fresh companion starts at 100%).
+* **Drops are visible.** A failed `push_audio` used to be `let _ =`. It is now
+  counted by the header and logged at most once per second.
+
+### Verification
+
+| Suite | Command | Result |
+| --- | --- | --- |
+| Rust | `cargo test --workspace` | 134 passed, 0 failed (was 126) |
+| C++ host | `scripts/run_host_tests.sh` | 79 cases, 0 failures |
+| Kotlin core | `:road-loader-core:testDebugUnitTest` | 41 passed, 0 failed (was 30) |
+
+New tests: pacer period, one block per period, no drift over a minute, silence
+when idle, tone then silence, volume scaling, backlog resynchronisation (7);
+`AudioPolicyTest` buffer sizing, volume cycle, level conversion, staleness,
+health text (11); companion `a_triggered_tone_reaches_the_audio_ring` and
+`silence_is_still_a_block`.
+
+### Device run (Mobilebox, Android 14 arm64, SwiftShader)
+
+| Run | Audio health line | Verdict |
+| --- | --- | --- |
+| before the jitter buffer | `underruns 3 \| stale 120 \| played 6543 \| age 0ms` | fails |
+| after the jitter buffer | `underruns 0 \| stale 6 \| played 16672 \| age 0ms \| buf 84ms \| 48k/2ch` | holds |
+
+The second run is 2 min 20 s of a live companion: `pushed 16683`, `played
+16672`, `stale 6`, `age 0-2ms`, `buf 77-84ms` of the track's 32,768 bytes
+(device minimum 15,664). `underruns` is `AudioTrack.getUnderrunCount()`, the
+device's own count, and it stayed at 0. No `releaseBuffer() ... underrun` line
+appears in the log for the run; the M3 run had two.
+
+Startup log, verbatim:
+`RoadAudio: track buffer 32768 bytes (device minimum 15664)` then
+`RoadAudio: primed 3 blocks + 3 silence, level 63ms of 32768 bytes`.
+
+The six skipped blocks (63 ms of audio over 140 s) came from catch-up passes
+logged as `skipped 1 stale blocks, age now 51ms`, which is the latency bound
+doing its job rather than a symptom.
+
+`Volume` was cycled on the device: the status line read `volume 50%`, then
+`volume 0%`, then `volume 100%`, and `pushed` kept climbing at every level (a
+muted mix still produces blocks; silence is data).
+
+Screenshot: `docs/screenshots/m5-audio-health.jpg`.
+
+### NOT RUN
+
+* Nothing listens to the phone's speaker in this environment, so "it sounds
+  right" is not claimed. What is claimed is what the device reports: no
+  underruns, a full buffer, blocks consumed at the production rate, and no
+  format mismatch.
+* The no-float-sink path (`Audio sink unavailable`) still has no device that
+  exercises it.

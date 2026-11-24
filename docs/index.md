@@ -28,7 +28,8 @@ involved anywhere.
 ## Verified
 
 Tested end to end on a cloud Android 14 phone: companion spawn, frame streaming,
-input round trip, audio bridge, 512 KiB asset stream at 4 MiB/s, self-test
-`0x8000001f`, and a cross-app satellite process using the same bridge.
+input round trip, 512 KiB asset stream at 4 MiB/s, self-test `0x8000001f`, a
+cross-app satellite process using the same bridge, and audio that holds at
+`underruns 0` for two minutes with the track buffer kept full.
 
 Source: <https://github.com/Lynxifyy/RoadLoader>

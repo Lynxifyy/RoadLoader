@@ -352,7 +352,8 @@ Java_dev_roadloader_core_NativeHost_pollEvent(JNIEnv* env, jobject, jlong handle
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_dev_roadloader_core_NativeHost_popAudio(JNIEnv* env, jobject, jlong handle, jbyteArray out) {
+Java_dev_roadloader_core_NativeHost_popAudio(
+    JNIEnv* env, jobject, jlong handle, jbyteArray out, jlongArray meta) {
   if (out == nullptr) {
     return -1;
   }
@@ -363,6 +364,18 @@ Java_dev_roadloader_core_NativeHost_popAudio(JNIEnv* env, jobject, jlong handle,
   const jsize capacity = env->GetArrayLength(out);
   const jsize length = static_cast<jsize>(std::min<uint32_t>(block.length, static_cast<uint32_t>(capacity)));
   env->SetByteArrayRegion(out, 0, length, reinterpret_cast<const jbyte*>(block.data));
+  // The consumer needs the block's own format and production time: assuming
+  // 48 kHz stereo would hide a producer that changed either, and the timestamp
+  // is what makes the bridge latency measurable instead of guessed.
+  if (meta != nullptr && env->GetArrayLength(meta) >= 4) {
+    const jlong values[4] = {
+        static_cast<jlong>(block.frames),
+        static_cast<jlong>(block.channels),
+        static_cast<jlong>(block.sample_rate),
+        static_cast<jlong>(block.timestamp_ns),
+    };
+    env->SetLongArrayRegion(meta, 0, 4, values);
+  }
   return length;
 }
 

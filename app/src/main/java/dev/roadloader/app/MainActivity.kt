@@ -23,6 +23,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import dev.roadloader.core.ApkInspector
+import dev.roadloader.core.AudioPolicy
 import dev.roadloader.core.CompanionAttach
 import dev.roadloader.core.CompanionServiceBase
 import dev.roadloader.core.CrashGuard
@@ -57,6 +58,8 @@ class MainActivity : Activity() {
     private var heartbeatLost = false
     private var shadersEnabled = true
     private var safeMode = false
+    private var volume = 1.0f
+    private var lastUnderrunWarnAt = 0L
     private var renderDistance = 4
     private var developerMode = false
     private var companionAbi: String? = null
@@ -237,6 +240,7 @@ class MainActivity : Activity() {
                     toast("Crash guard reset")
                     refreshCoreStatus()
                 },
+                button("Volume") { cycleVolume() },
             ),
         )
         root.addView(
@@ -433,6 +437,9 @@ class MainActivity : Activity() {
             return
         }
 
+        // A new companion starts at full volume, so the UI's choice has to be
+        // re-sent or the slider and the mixer disagree after a restart.
+        created.setVolume(volume)
         val bridge = RoadAudioBridge(created)
         val audioStarted = bridge.start()
         audio = bridge
@@ -530,6 +537,16 @@ class MainActivity : Activity() {
         if (rate != null) {
             engineFps = rate
         }
+        audio?.let { bridge ->
+            // The device's own underrun count is the only proof playback held up;
+            // say so once per interval instead of letting it climb silently.
+            if (AudioPolicy.needsWarning(bridge.underruns) &&
+                System.currentTimeMillis() - lastUnderrunWarnAt > 15_000
+            ) {
+                lastUnderrunWarnAt = System.currentTimeMillis()
+                toast("Audio underruns: ${bridge.underruns} (${bridge.health()})")
+            }
+        }
         val memoryMessage = RoadMemory.applyPressurePolicy(active)
         if (memoryMessage != null && System.currentTimeMillis() - lastMemoryWarningAt > 15_000) {
             lastMemoryWarningAt = System.currentTimeMillis()
@@ -568,8 +585,8 @@ class MainActivity : Activity() {
                 if (companionUid != 0) append(" | uid ").append(companionUid)
                 append("\nflags 0x").append(Integer.toHexString(stats.flags))
                 append(" | last input ").append(stats.lastInputSeq)
-                append(" | audio ").append(stats.audioPushed)
-                append("/").append(audio?.blocksPlayed ?: 0)
+                append(" | pushed ").append(stats.audioPushed)
+                append(" | ").append(audio?.health() ?: "no bridge")
                 audio?.error?.let { append(" (").append(it).append(")") }
                 append(" | render ").append(stats.renderAvgUs).append("us")
                 lastEvent?.let { append("\nevent ").append(it) }
@@ -643,6 +660,16 @@ class MainActivity : Activity() {
         renderDistance = next
         active.setRenderDistance(next)
         statusView.text = "render distance $next chunks"
+    }
+
+    private fun cycleVolume() {
+        val active = session ?: run {
+            toast("Launch the companion first")
+            return
+        }
+        volume = AudioPolicy.nextVolume(volume)
+        active.setVolume(volume)
+        statusView.text = "volume ${(volume * 100).toInt()}%"
     }
 
     private fun streamAssets() {

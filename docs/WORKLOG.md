@@ -90,3 +90,80 @@ compiled both ABIs from source.
 - `inputs.files(...).withPathSensitivity(RELATIVE)` means a Rust source change is
   detected by content, not mtime, so `touch` alone does not trigger a rebuild.
   That is intended: the staged `.so` only needs to change when the sources do.
+
+## M1 - ARM32 hook correctness (findings H1, H2, H3, H4, B3)
+
+### Changes
+
+1. **Thumb jump halfword order (H1).** `encodeAbsoluteJump(.., Isa::Thumb)` wrote
+   `0xF8DFF000` as one little-endian word, so memory held `00 F0 DF F8`: the CPU
+   decoded `0xF000` first, the opening halfword of a BL. The encoder now appends
+   two halfwords, `0xF8DF` then `0xF000`, so the bytes are `DF F8 00 F0`.
+2. **Thumb jump alignment (H2).** `ldr.w pc, [pc, #0]` reads its literal from
+   `Align(PC, 4)` with `PC = address + 4`. At an entry of `2 mod 4` the literal
+   landed on the instruction's own second halfword. `encodeJumpPatch(entry, ..)`
+   now prefixes a 16-bit `nop` (`0xBF00`) for those entries; the patch is 10
+   bytes instead of 8 and the extra 2 bytes are part of the overwritten and
+   restored range.
+3. **Explicit ISA (H3).** `InlineHook::install` takes an `Isa` and refuses
+   `Isa::Unknown`; the ISA is no longer inferred from address bit 0. Each
+   `GameTargets` entry is a `GameTarget {address, isa, expectedPrologue,
+   prologueMask, expectedSize}`. A target without an ISA is refused.
+4. **Prologue verification (B3).** `hooks::verifyPrologue(target, expected, mask,
+   count)` compares the live bytes with the bytes the pattern matched, reporting
+   the first difference. `GameHooks::install` refuses a target whose prologue does
+   not match, and refuses targets with no expectation at all unless
+   `GameOptions::allowUnverified` is set (default false).
+5. **Relocator fail-closed rules (H4).** Refused prologues now also include
+   ARM data-processing instructions that read r15 (`mov r0, pc`), Thumb
+   high-register operations with PCs operand (`add/mov rX, pc`), IT blocks, and
+   TBB/TBH table branches. `mrs`/`msr`/`bx`/`blx` keep their 1111 fields as
+   status-register or register numbers and are still relocated.
+6. **Page protection (H4).** The real protection of every page covering the
+   patch is read from `/proc/self/maps`; the hook makes the pages read+write
+   (execute removed) and restores exactly what was there. Read+write+execute is
+   only a fallback, used when the first form is refused, and is logged.
+
+### Verification
+
+| Suite | Command | Result |
+| --- | --- | --- |
+| C++ host | `scripts/run_host_tests.sh` | `ALL TESTS PASSED (79 cases, 0 failures)` (was 55) |
+| Kotlin | `./gradlew :road-loader-core:testDebugUnitTest :satellite:testDebugUnitTest` | BUILD SUCCESSFUL, 6 tests, 0 failures |
+| Android | `./gradlew :app:assembleDebug` | BUILD SUCCESSFUL; `libroadloader32.so` for `armeabi-v7a` contains the new refusal strings |
+
+The new tests fail against the M0 code:
+
+- `thumb_jump_bytes_are_halfword_ordered` and the changed assertions in
+  `absolute_jump_encodings` / `thumb_prologue_is_relocated` compare the bytes
+  `DF F8 00 F0`, which the old single-word write could not produce.
+- `thumb_jump_patch_pads_a_2_mod_4_entry` needs 10 bytes with a leading `0xBF00`;
+  `encodeJumpPatch` did not exist.
+- `arm_data_processing_from_pc_is_refused`, `thumb_high_register_read_of_pc_is_refused`,
+  `thumb_it_block_is_refused` and `thumb_table_branch_is_refused` describe
+  instructions the old relocator copied verbatim and reported as supported.
+- `unknown_isa_is_refused_by_the_relocator`, `inline_hook_rejects_a_missing_isa`,
+  `evaluate_target_needs_an_isa`, `game_hooks_refuse_a_target_without_an_isa`
+  exercise an ISA argument that did not exist.
+- `prologue_verification_*` and `game_hooks_refuse_an_unverified_target` /
+  `game_hooks_refuse_a_prologue_mismatch` exercise `verifyPrologue` and the
+  refusal path, neither of which existed.
+
+### NOT RUN
+
+- Any hook against a real `libminecraftpe.so`: no 32-bit device or emulator is
+  attached, and the library is not present in this environment.
+- Execution of a patched function end to end: the host is x86_64, where
+  `InlineHook::install` returns `Unsupported` by design, so the tests cover the
+  encoding, relocation, verification and refusal paths, not live execution.
+
+### Risks and assumptions
+
+- Relocation still copies instructions verbatim after the new checks. An
+  instruction form that reads PC and is not in the list above would still be
+  copied; the listed set covers the forms the compiler emits in function
+  prologues.
+- Rewriting a prologue while another thread executes it is inherently racy. The
+  install path keeps the window to one `memcpy` and flushes the instruction
+  cache, but it cannot stop another thread from executing the half-written
+  prologue. Suspending threads around the patch is not implemented.

@@ -28,7 +28,12 @@ class InlineHook {
 
   /// Installs a detour from `target` to `replacement`. On success, `original`
   /// receives a callable pointer to the trampoline.
-  Status install(void* target, void* replacement, void** original);
+  ///
+  /// `isa` must be stated by the caller. It is never inferred from the low bit
+  /// of `target`: addresses coming from a signature scan carry no ISA
+  /// information, and guessing turns a Thumb function into a corrupt ARM hook.
+  /// `Isa::Unknown` is refused.
+  Status install(void* target, void* replacement, void** original, Isa isa);
 
   /// Restores the original bytes. Safe to call more than once.
   Status uninstall();

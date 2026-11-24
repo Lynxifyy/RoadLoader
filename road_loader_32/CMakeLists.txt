@@ -25,6 +25,7 @@ add_library(roadloader32 SHARED
   src/pl/memory/AllocatorOverride.cpp
   src/pl/hooks/ArmRelocator.cpp
   src/pl/hooks/InlineHook.cpp
+  src/pl/hooks/PrologueVerify.cpp
   src/pl/runtime/GameHooks.cpp)
 
 target_include_directories(roadloader32 PRIVATE include)

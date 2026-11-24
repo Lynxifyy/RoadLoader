@@ -235,12 +235,26 @@ extern "C" float plVec3DistanceThunk(const float* a, const float* b) {
 
 size_t GameTargets::count() const {
   size_t total = 0;
-  for (const uintptr_t target :
+  for (const auto& target :
        {levelTick, actorRender, screenViewSetup, swapBuffers, processMouseEvent, chunkMesher,
         actorMove, vec3Distance, soundEnginePlay}) {
-    total += target != 0 ? 1 : 0;
+    total += target.present() ? 1 : 0;
   }
   return total;
+}
+
+TargetVerdict evaluateTarget(const GameTarget& target, const GameOptions& options) {
+  if (!target.present()) {
+    return TargetVerdict::NoAddress;
+  }
+  if (target.isa == hooks::Isa::Unknown) {
+    return TargetVerdict::NoIsa;
+  }
+  const bool verified = target.expectedPrologue != nullptr && target.expectedSize > 0;
+  if (!verified && !options.allowUnverified) {
+    return TargetVerdict::Unverified;
+  }
+  return TargetVerdict::Install;
 }
 
 GameHooks& GameHooks::instance() {
@@ -250,16 +264,37 @@ GameHooks& GameHooks::instance() {
 
 GameHooks::~GameHooks() { uninstallAll(); }
 
-Status GameHooks::installOne(const char* name, uintptr_t target, void* replacement) {
-  if (target == 0) {
-    return Status::InvalidArgument;
+Status GameHooks::installOne(const char* name, const GameTarget& target, void* replacement) {
+  switch (evaluateTarget(target, options_)) {
+    case TargetVerdict::NoAddress:
+      return Status::InvalidArgument;
+    case TargetVerdict::NoIsa:
+      PL_LOGW("hook %s at 0x%zx refused: no explicit ISA", name,
+              static_cast<size_t>(target.address));
+      return Status::InvalidArgument;
+    case TargetVerdict::Unverified:
+      PL_LOGW("hook %s at 0x%zx refused: prologue not verified", name,
+              static_cast<size_t>(target.address));
+      return Status::PermissionDenied;
+    case TargetVerdict::Install:
+      break;
+  }
+  if (target.expectedPrologue != nullptr && target.expectedSize > 0) {
+    const auto check = hooks::verifyPrologue(reinterpret_cast<const uint8_t*>(target.address),
+                                             target.expectedPrologue, target.prologueMask,
+                                             target.expectedSize);
+    if (!check.ok) {
+      PL_LOGW("hook %s at 0x%zx refused: %s at byte %zu", name,
+              static_cast<size_t>(target.address), check.reason, check.mismatchOffset);
+      return Status::PermissionDenied;
+    }
   }
   Entry entry;
   entry.name = name;
-  const Status status =
-      entry.hook.install(reinterpret_cast<void*>(target), replacement, &entry.original);
+  const Status status = entry.hook.install(reinterpret_cast<void*>(target.address), replacement,
+                                           &entry.original, target.isa);
   if (status != Status::Ok) {
-    PL_LOGW("hook %s at 0x%zx not installed: %s", name, static_cast<size_t>(target),
+    PL_LOGW("hook %s at 0x%zx not installed: %s", name, static_cast<size_t>(target.address),
             statusName(status));
     return status;
   }
@@ -281,21 +316,21 @@ Status GameHooks::install(const GameTargets& targets, const GameOptions& options
   postProcessor().setEnabled(options.enableShaders);
 #endif
   size_t installed = 0;
-  if (targets.swapBuffers != 0) {
+  if (targets.swapBuffers.present()) {
     if (installOne("AppPlatform::swapBuffers", targets.swapBuffers,
                    reinterpret_cast<void*>(&plSwapBuffersThunk)) == Status::Ok) {
       g_swapBuffersOriginal.store(entries_.back().original);
       ++installed;
     }
   }
-  if (targets.vec3Distance != 0) {
+  if (targets.vec3Distance.present()) {
     if (installOne("Vec3::distance", targets.vec3Distance,
                    reinterpret_cast<void*>(&plVec3DistanceThunk)) == Status::Ok) {
       g_distanceOriginal.store(entries_.back().original);
       ++installed;
     }
   }
-  if (targets.screenViewSetup != 0) {
+  if (targets.screenViewSetup.present()) {
     if (installOne("ScreenView::setup", targets.screenViewSetup,
                    reinterpret_cast<void*>(&plScreenViewSetupThunk)) == Status::Ok) {
       g_screenViewOriginal.store(entries_.back().original);
@@ -306,16 +341,16 @@ Status GameHooks::install(const GameTargets& targets, const GameOptions& options
   // layout, audio buffer descriptor). They are reported so the caller can see
   // what is still unresolved instead of silently installing a wrong ABI.
   for (const auto& [name, target] :
-       std::initializer_list<std::pair<const char*, uintptr_t>>{
+       std::initializer_list<std::pair<const char*, GameTarget>>{
            {"Level::tick", targets.levelTick},
            {"Actor::render", targets.actorRender},
            {"AppPlatform::processMouseEvent", targets.processMouseEvent},
            {"ChunkMesher::buildMesh", targets.chunkMesher},
            {"Actor::move", targets.actorMove},
            {"SoundEngine::play", targets.soundEnginePlay}}) {
-    if (target != 0) {
+    if (target.present()) {
       PL_LOGW("%s found at 0x%zx but needs a per-version adapter; not hooked", name,
-              static_cast<size_t>(target));
+              static_cast<size_t>(target.address));
     }
   }
   PL_LOGI("installed %zu hook(s)", installed);

@@ -18,6 +18,7 @@ set(ROAD_SOURCES
   ../src/pl/memory/AllocatorOverride.cpp
   ../src/pl/hooks/ArmRelocator.cpp
   ../src/pl/hooks/InlineHook.cpp
+  ../src/pl/hooks/PrologueVerify.cpp
   ../src/pl/ipc/SharedRegion.cpp
   ../src/pl/runtime/GameHooks.cpp)
 

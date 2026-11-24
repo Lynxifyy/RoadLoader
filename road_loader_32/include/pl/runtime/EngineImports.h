@@ -46,6 +46,13 @@ class EngineImports {
   /// still pointing at the lazy resolver.
   static ImportProbe install(const char* module, const char* symbol, void* replacement);
 
+  /// Paths from `/proc/self/maps` that contain `filter`, one per line, for the
+  /// developer overlay. Empty when the maps file cannot be read.
+  static std::string loadedModules(std::string_view filter, size_t limit = 24);
+
+  /// One compact line explaining how a module name matched, or did not.
+  static std::string moduleDebug(const char* name);
+
   /// Proves the mechanism inside the running process: installs a counting hook
   /// on a symbol this library really imports, calls it, checks the counter, then
   /// restores the original and calls again. `module`/`symbol` default to this

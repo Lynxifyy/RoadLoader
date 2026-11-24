@@ -482,6 +482,21 @@ Java_dev_roadloader_core_NativeHost_engineImportReport(JNIEnv* env, jobject) {
 }
 
 extern "C" JNIEXPORT jstring JNICALL
+Java_dev_roadloader_core_NativeHost_loadedModuleReport(JNIEnv* env, jobject) {
+  return env->NewStringUTF(pl::runtime::EngineImports::loadedModules("/data/").c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_roadloader_core_NativeHost_moduleDebug(JNIEnv* env, jobject, jstring name) {
+  const char* text = name != nullptr ? env->GetStringUTFChars(name, nullptr) : nullptr;
+  std::string report = pl::runtime::EngineImports::moduleDebug(text);
+  if (text != nullptr) {
+    env->ReleaseStringUTFChars(name, text);
+  }
+  return env->NewStringUTF(report.c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
 Java_dev_roadloader_core_NativeHost_importHookSelfTest(JNIEnv* env, jobject) {
   const auto probe = pl::runtime::EngineImports::selfTest();
   std::string line = probe.describe();

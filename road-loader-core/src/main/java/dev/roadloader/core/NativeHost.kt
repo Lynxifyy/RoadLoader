@@ -54,6 +54,12 @@ object NativeHost {
 
     /** Installs, fires and restores an import hook inside this process. */
     external fun importHookSelfTest(): String
+
+    /** Paths under /data this process has mapped, space separated. */
+    external fun loadedModuleReport(): String
+
+    /** One line explaining how a module name matched, or did not. */
+    external fun moduleDebug(name: String): String
     external fun transpileShader(source: String, stage: Int): String?
     external fun crc32(data: ByteArray): Int
     external fun setVolume(handle: Long, volume: Float): Int

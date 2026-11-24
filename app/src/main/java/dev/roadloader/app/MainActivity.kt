@@ -15,6 +15,7 @@ import android.os.Looper
 import android.os.Message
 import android.os.Messenger
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
@@ -164,6 +165,15 @@ class MainActivity : Activity() {
                 .getOrElse { "unavailable (${it.javaClass.simpleName})" }
             importHookLine = selfTest
             engineImportLine = engine
+            // Also on the record: the overlay is only visible in dev mode, and
+            // these two lines are the evidence that the hook layer works.
+            Log.i("RoadLoader", "import hook: $selfTest")
+            Log.i("RoadLoader", "engine: $engine")
+            val modules = runCatching { NativeHost.loadedModuleReport() }.getOrElse { "" }
+            Log.i("RoadLoader", "modules: $modules")
+            val debug = runCatching { NativeHost.moduleDebug("libroadloader32.so") }
+                .getOrElse { "unavailable" }
+            Log.i("RoadLoader", "module debug: $debug")
         }.start()
     }
 

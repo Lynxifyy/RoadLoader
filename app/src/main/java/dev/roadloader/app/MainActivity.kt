@@ -23,6 +23,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import dev.roadloader.core.ApkInspector
+import dev.roadloader.core.CompanionAttach
 import dev.roadloader.core.CompanionServiceBase
 import dev.roadloader.core.CrashGuard
 import dev.roadloader.core.FrameRateCounter
@@ -57,6 +58,9 @@ class MainActivity : Activity() {
     private var shadersEnabled = true
     private var safeMode = false
     private var developerMode = false
+    private var companionAbi: String? = null
+    private var companionIs64Bit = false
+    private var companionUid = 0
     private var presentedFps = 0
     private var presentedTotal = 0L
     private var frameAgeMs = 0
@@ -73,15 +77,28 @@ class MainActivity : Activity() {
     private val attachReply = Messenger(
         Handler(Looper.getMainLooper()) { message ->
             if (message.what == CompanionServiceBase.MSG_ATTACHED) {
+                companionIs64Bit = message.arg2 == 1
+                companionAbi = message.data?.getString(CompanionServiceBase.EXTRA_ABI)
+                companionUid = message.data?.getInt(CompanionServiceBase.EXTRA_CALLER_UID) ?: 0
                 if (message.arg1 == CompanionServiceBase.ATTACH_OK) {
-                    statusView.text = "Companion attached to the shared region."
+                    statusView.text = buildString {
+                        append("Companion attached: ")
+                        append(companionAbi ?: "abi unknown")
+                        if (companionIs64Bit && !usingSatellite) {
+                            append(
+                                "\nThis is the same ABI as the UI. A real 32-bit engine " +
+                                    "needs the armeabi-v7a satellite.",
+                            )
+                        }
+                    }
                 } else {
-                    statusView.text = "Companion refused the region (code ${message.arg1})."
+                    statusView.text = CompanionAttach.describe(message.arg1)
                 }
             }
             true
         },
     )
+
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -361,7 +378,9 @@ class MainActivity : Activity() {
                 .setTitle("Satellite not installed")
                 .setMessage(
                     "Install satellite/build/outputs/apk/release/satellite-release.apk " +
-                        "(armeabi-v7a only) to run a real 32-bit engine process.",
+                        "(armeabi-v7a only) to run a real 32-bit engine process.\n\n" +
+                        "If the device refuses to install it, it cannot execute 32-bit " +
+                        "code at all, so no 32-bit engine is possible there.",
                 )
                 .setPositiveButton("OK", null)
                 .show()
@@ -470,6 +489,9 @@ class MainActivity : Activity() {
         frameAgeMs = 0
         engineFps = 0.0
         engineRate.reset()
+        companionAbi = null
+        companionIs64Bit = false
+        companionUid = 0
         if (showToast) toast("Companion stopped")
     }
 
@@ -518,6 +540,7 @@ class MainActivity : Activity() {
             append(" | heap ").append(stats.heapUsedMb()).append(" MB")
             append(" | hb ").append(stats.heartbeatAgeMs).append("ms")
             append(" | in ").append(stats.inputConsumed)
+            append(" | ").append(if (companionIs64Bit) "64-bit" else "32-bit")
             if (firstFrameSeen && engineFps < 0.5) {
                 // The last frame stays on screen, so say it is stale instead of
                 // letting a frozen picture look like a running game.
@@ -526,6 +549,8 @@ class MainActivity : Activity() {
             if (developerMode) {
                 append(" | age ").append(frameAgeMs).append("ms")
                 append(" | shown total ").append(presentedTotal)
+                companionAbi?.let { append(" | ").append(it) }
+                if (companionUid != 0) append(" | uid ").append(companionUid)
                 append("\nflags 0x").append(Integer.toHexString(stats.flags))
                 append(" | last input ").append(stats.lastInputSeq)
                 append(" | audio ").append(stats.audioPushed)

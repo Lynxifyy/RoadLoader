@@ -80,3 +80,28 @@ adb logcat -s RoadLoader32 RoadAudio AndroidRuntime
 
 The companion's `pid` and heartbeat are in the header, so `dumpsys meminfo
 <package>:road32` shows the real 32-bit footprint on a 32-bit device.
+
+## The companion says it is 64-bit
+
+That is correct on a 64-bit device when you launch the in-APK companion. An APK
+installs at one ABI and every process in it runs at that ABI, so `:road32` is a
+second process, not a second pointer size.
+
+Install `satellite/build/outputs/apk/release/satellite-release.apk` (armeabi-v7a
+only) and press *Satellite* instead. If it refuses to install, the device cannot
+execute 32-bit code at all (64-bit-only kernel), and no 32-bit engine is possible
+on it.
+
+The status line after attaching shows the ABI the service reported, for example
+`64-bit (arm64-v8a 64-bit ptr=8 page=4096 abi=1)`.
+
+## "Companion refused the region (larger than 128 MB)"
+
+The client asked the companion to map a region larger than `MAX_REGION_BYTES`
+(128 MiB, which covers a 3840x2160 triple buffer). Lower the render size; a
+4K region is about 95 MiB and leaves little room in a 32-bit address space.
+
+## "Companion already has a client attached"
+
+Another app holds the single session. Close it, or stop the satellite with
+`adb shell am force-stop com.caramel.roadloader.satellite`, then launch again.

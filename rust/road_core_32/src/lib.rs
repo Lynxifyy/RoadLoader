@@ -347,6 +347,7 @@ pub extern "C" fn road_companion_attach(
     let region = match Region::attach(fd, size) {
         Ok(region) => Arc::new(region),
         Err(ipc::region::AttachError::BadAbi { .. }) => return -2,
+        Err(ipc::region::AttachError::TooLarge { .. }) => return -4,
         Err(_) => return -1,
     };
     region.set_pid(std::process::id());

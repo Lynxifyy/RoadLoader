@@ -34,9 +34,50 @@ class, so the bridge does not care which one hosts the engine. The companion is 
 foreground service with a low-importance notification; it never appears in the
 task switcher because it has no activity.
 
-The satellite APK ships `armeabi-v7a` so a 32-bit device runs it as a genuine
-32-bit process. It also ships `arm64-v8a` so the APK installs on 64-bit-only
-devices, where the same cross-app bridge can still be exercised.
+### Which process is actually 32-bit
+
+An APK is installed at one ABI, the device's preferred one, and every process of
+that APK runs at that ABI. A `:road32` service inside the main APK is therefore
+**64-bit** on a 64-bit device: it is a second process, not a second ABI. The
+name describes its role, not its pointer size.
+
+| Install | `:road32` process | Real 32-bit engine? |
+| --- | --- | --- |
+| main APK (`armeabi-v7a` + `arm64-v8a`) on a 64-bit device | 64-bit | no |
+| main APK on a 32-bit device | 32-bit | yes |
+| satellite APK (`armeabi-v7a` only) on a 64-bit device with 32-bit support | 32-bit | yes |
+| satellite APK on a 64-bit-only device | does not install | not possible |
+
+The satellite ships `armeabi-v7a` only for that reason. Shipping `arm64-v8a`
+there as well would let it install everywhere, but on a 64-bit device it would
+then run 64-bit and provide nothing the main APK does not already provide.
+
+The companion reports its own answer: after attaching, the service replies with
+`Process.is64Bit()` and `NativeCompanion.abiInfo()` (the loaded library's ABI,
+pointer size and page size). The UI shows `32-bit` or `64-bit` next to the input
+counter, and says so in the status line when the in-APK companion is 64-bit.
+
+### Attach security
+
+The satellite service is exported so another app can drive it, which means the
+attach path treats the caller as untrusted:
+
+* the region size must be in `1..128 MiB` (`MAX_REGION_BYTES`); the core refuses
+  a larger mapping before it is created, so a caller cannot make the 32-bit
+  process reserve memory it can never use;
+* the descriptor must carry the region magic, the matching ABI version, the
+  header size the core expects, dimensions within `16..8192` and a mapping at
+  least as large as the layout it describes;
+* one session at a time: a second attach gets `-3` and cannot displace a running
+  client;
+* the caller's uid is logged with the attach and returned to the client;
+* the service returns `START_NOT_STICKY`, so a killed companion is not silently
+  restarted with no client.
+
+The caller supplies the region, so attaching grants it no read access to engine
+memory. What remains is denial of service: any app on the device can occupy the
+single session. That is the cost of an exported engine, and the reason the
+satellite is a separate, opt-in APK.
 
 ## 2. Descriptor handoff
 

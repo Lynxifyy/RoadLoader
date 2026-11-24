@@ -146,6 +146,9 @@ int road_host_pop_audio(void* session, RoadAudioBlock* out);
 int road_host_stats(void* session, RoadStats* out);
 void road_host_destroy(void* session);
 
+/// Returns 0 on success, -1 on a bad descriptor, -2 on an ABI mismatch, -3 when a
+/// companion is already attached, -4 when `size` exceeds
+/// `MAX_REGION_BYTES` (128 MiB).
 int road_companion_attach(int fd, size_t size, uint32_t flags, uint64_t heap_limit);
 int road_companion_stop();
 int road_companion_is_running();

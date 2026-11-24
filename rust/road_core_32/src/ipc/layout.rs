@@ -334,6 +334,30 @@ pub fn required_size(width: u32, height: u32) -> usize {
     RegionLayout::new(width, height).total_size
 }
 
+/// Largest region a companion will map.
+///
+/// The region is supplied by the peer process, so the size is not trusted. A
+/// 3840x2160 region is about 95 MiB (three 33 MiB slots plus the rings), which
+/// is the largest resolution the layout accepts; anything past this would let a
+/// caller make the 32-bit process reserve memory it can never use.
+pub const MAX_REGION_BYTES: usize = 128 * 1024 * 1024;
+
+#[cfg(test)]
+mod size_tests {
+    use super::*;
+
+    #[test]
+    fn the_cap_covers_the_largest_accepted_resolution() {
+        let uhd = RegionLayout::new(3840, 2160);
+        assert!(uhd.total_size <= MAX_REGION_BYTES, "size={}", uhd.total_size);
+    }
+
+    #[test]
+    fn the_cap_is_below_a_32_bit_address_space() {
+        assert!(MAX_REGION_BYTES < 512 * 1024 * 1024);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

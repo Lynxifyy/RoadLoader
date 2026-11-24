@@ -3,10 +3,12 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-// The satellite ships armeabi-v7a so a 32-bit device (or a 64-bit device with
-// 32-bit support) runs it as a genuine 32-bit process. arm64-v8a is included so
-// the APK still installs on 64-bit-only devices, where it exercises the same
-// cross-app IPC path with the 64-bit build of the core.
+// armeabi-v7a only, deliberately. An APK that ships both ABIs is installed at
+// the device's preferred ABI, so on a 64-bit device every process in it is
+// 64-bit no matter what the service is called. A 32-bit-only APK is the only
+// way to get a genuine 32-bit process on such a device; it will not install on
+// 64-bit-only hardware, which is correct because that hardware cannot execute
+// 32-bit code at all.
 android {
     namespace = "com.caramel.roadloader.satellite"
     compileSdk = 35
@@ -18,7 +20,7 @@ android {
         versionCode = 1
         versionName = "2.1.0-roadloader-rc1"
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+            abiFilters += "armeabi-v7a"
         }
     }
 

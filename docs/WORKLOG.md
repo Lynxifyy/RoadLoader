@@ -248,3 +248,81 @@ presentation counters.
 it). Rust 1.100.0 was reinstalled with rustup and the `armv7-linux-androideabi`,
 `aarch64-linux-android` and `x86_64-unknown-linux-gnu` targets, then all suites
 were re-run from that toolchain.
+
+## M3 - A real 32-bit process, and an attach path that trusts nothing
+
+### What was wrong
+
+1. **The `:road32` process is not 32-bit.** An APK installs at one ABI and every
+   process in it runs at that ABI. The main APK ships `armeabi-v7a` and
+   `arm64-v8a`, so on a 64-bit device the companion process was 64-bit and loaded
+   the arm64 build of `libroadloader32.so`. Nothing said so: the service name,
+   the manifest comment and the docs all claimed 32 bits, and the demo ran, so no
+   test could notice.
+2. **The satellite shipped both ABIs**, which defeated its purpose. With
+   `arm64-v8a` present it installed as a 64-bit app on 64-bit devices, so the
+   "32-bit engine" APK was not 32-bit either.
+3. **The attach path trusted the caller.** The satellite service is exported, and
+   it mapped whatever size the caller asked for. `Region::attach` validated the
+   magic, ABI version and dimensions, but `SharedMemory::from_fd` mmapped the
+   caller's `size` after only checking `fstat`, so a caller could ask a 32-bit
+   process to map gigabytes.
+4. **A failed attach leaked the descriptor.** `descriptor.close()` ran after
+   `NativeCompanion.attach(...)`; a throw (for example `UnsatisfiedLinkError` in
+   a broken build) skipped it.
+5. **A killed companion was restarted by the system** with `START_STICKY`, then
+   sat in a foreground notification for 15 s with no client before stopping.
+
+### Changes
+
+* `CompanionServiceBase` reports the truth: the attach reply carries
+  `Process.is64Bit()` in `arg2` and a Bundle with `NativeCompanion.abiInfo()`
+  (the loaded library's ABI, pointer size, page size) plus the caller's uid. It
+  logs the caller uid, closes the descriptor in a `finally`, refuses
+  `size <= 0` and `size > 128 MiB` before touching the core, returns
+  `START_NOT_STICKY`, and answers `MSG_QUERY_ABI` for a client that wants the
+  report without attaching.
+* `CompanionAttach` (new): the attach codes and their sentences, shared by the
+  service and the client, with `sizeAllowed()` next to `RoadConstants.MAX_REGION_BYTES`.
+* `satellite/build.gradle.kts`: `abiFilters += "armeabi-v7a"`. The satellite APK
+  now contains only `lib/armeabi-v7a`, so a 64-bit device with 32-bit support
+  installs it as a genuine 32-bit app. It no longer installs on 64-bit-only
+  hardware, which is correct: that hardware cannot run the code.
+* Rust: `MAX_REGION_BYTES` (128 MiB) in `ipc/layout.rs`, `AttachError::TooLarge`,
+  a check in `Region::attach` before anything is mapped, and the C-ABI code `-4`
+  for it (documented in `RoadCoreAbi.h`).
+* `MainActivity`: shows `32-bit` or `64-bit` in the overlay, prints the reported
+  ABI in the status line, warns when the in-APK companion is 64-bit, and turns
+  each attach code into a sentence. Developer mode adds the ABI string and uid.
+* `ROAD_LOADER_ARCHITECTURE.md`: a table of which install yields a 32-bit
+  process, and the attach security model with its residual risk. `TROUBLESHOOTING.md`:
+  the 64-bit companion, the size refusal and the busy refusal.
+
+### Verification
+
+| Suite | Command | Result |
+| --- | --- | --- |
+| Kotlin | `:road-loader-core:testDebugUnitTest` | 23 tests, 0 failures (was 19) |
+| Rust | `cargo test --workspace` | 105 passed, 0 failed (was 102) |
+| C++ host | `scripts/run_host_tests.sh` | 79 cases, 0 failures |
+| APK ABIs | `zipfile` listing of both debug APKs | `app`: `arm64-v8a` + `armeabi-v7a`; `satellite`: `armeabi-v7a` only |
+| UI strings | `classes.dex` of `app-debug.apk` | ABI warning and attach sentences present |
+
+New tests: `attach_rejects_a_region_larger_than_the_cap`,
+`the_cap_covers_the_largest_accepted_resolution`,
+`the_cap_is_below_a_32_bit_address_space`, `CompanionAttachTest` (4 cases).
+
+### NOT RUN
+
+* No device or emulator, so nothing here was observed on hardware: the reply
+  `arg2`/Bundle path, the satellite installing as 32-bit, and `Process.is64Bit()`
+  returning false were not executed. They are the parts most worth checking on
+  the cloud phone.
+* The 64-bit-only-device case (satellite refuses to install) is untested.
+
+### Residual risk
+
+The satellite is exported so another app can drive it, so any app on the device
+can take the single session and deny it to the real client. Making the service
+signature-protected would break the cross-app client this project is built to
+serve, so the choice is documented rather than hidden.

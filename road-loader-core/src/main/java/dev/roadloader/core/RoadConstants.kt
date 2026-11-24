@@ -39,6 +39,12 @@ object RoadConstants {
     /** The only pixel format the companion publishes: 8-bit RGBA, 4 bytes/px. */
     const val FRAME_FORMAT_RGBA8888 = 1
 
+    /**
+     * Largest region the companion will map (matches `MAX_REGION_BYTES` in
+     * `ipc/layout.rs`). A 3840x2160 region is about 95 MiB.
+     */
+    const val MAX_REGION_BYTES = 128L * 1024 * 1024
+
     // Indexes of the `LongArray` filled by `NativeHost.pollFrame`.
     const val FRAME_INFO_PTR = 0
     const val FRAME_INFO_SEQ = 1

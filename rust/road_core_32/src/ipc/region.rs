@@ -85,6 +85,7 @@ pub enum AttachError {
     BadHeaderSize(u32),
     BadDimensions { width: u32, height: u32 },
     TooSmall { needed: usize, found: usize },
+    TooLarge { size: usize, max: usize },
 }
 
 /// A mapped Road Loader shared region.
@@ -118,6 +119,10 @@ impl Region {
 
     /// Attaches to a region created by the peer.
     pub fn attach(fd: i32, size: usize) -> Result<Self, AttachError> {
+        // The size comes from the peer process; refuse it before it is mapped.
+        if size > super::layout::MAX_REGION_BYTES {
+            return Err(AttachError::TooLarge { size, max: super::layout::MAX_REGION_BYTES });
+        }
         let shm = SharedMemory::from_fd(fd, size).map_err(|_| AttachError::TooSmall {
             needed: size,
             found: 0,
@@ -678,6 +683,22 @@ mod tests {
         region.mark_running();
         assert_eq!(region.status(), STATUS_RUNNING);
         assert_eq!(region.stats().status, STATUS_RUNNING);
+    }
+
+    #[test]
+    fn attach_rejects_a_region_larger_than_the_cap() {
+        let region = region();
+        let fd = region.duplicate_fd().expect("dup");
+        let err = Region::attach(fd, super::super::layout::MAX_REGION_BYTES + 1);
+        match err.err() {
+            Some(AttachError::TooLarge { size, max }) => {
+                assert_eq!(size, super::super::layout::MAX_REGION_BYTES + 1);
+                assert_eq!(max, super::super::layout::MAX_REGION_BYTES);
+            }
+            other => panic!("expected TooLarge, got {other:?}"),
+        }
+        // SAFETY: we own the duplicated descriptor.
+        unsafe { libc::close(fd) };
     }
 
     #[test]

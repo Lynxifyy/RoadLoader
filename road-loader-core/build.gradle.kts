@@ -5,14 +5,27 @@ plugins {
 
 // The Rust core and the C++ bridge are built for both ABIs here so every app
 // module consumes the exact same artifacts.
+val rustSources = rootProject.fileTree("rust") {
+    include("**/*.rs", "**/Cargo.toml", "**/Cargo.lock")
+    exclude("target/**", "**/target/**")
+}
+val rustStagedLibs = files(
+    "src/main/jniLibs/armeabi-v7a/libroad_core_32.so",
+    "src/main/jniLibs/arm64-v8a/libroad_core_32.so",
+)
+
 val cargoBuild = tasks.register<Exec>("cargoBuild") {
     description = "Cross-compiles libroad_core_32.so for both ABIs"
+    group = "build"
     workingDir = rootProject.projectDir
     commandLine("bash", "scripts/build_rust.sh", "release")
     environment("PATH", "${System.getProperty("user.home")}/.cargo/bin:" + (System.getenv("PATH") ?: ""))
     environment("ANDROID_HOME", android.sdkDirectory.absolutePath)
     environment("ANDROID_NDK_HOME", android.ndkDirectory.absolutePath)
-    outputs.upToDateWhen { false }
+    inputs.files(rustSources, rootProject.file("scripts/build_rust.sh"))
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.property("ndkVersion", android.ndkVersion)
+    outputs.files(rustStagedLibs)
 }
 
 tasks.matching { it.name.startsWith("configureCMake") || it.name.startsWith("buildCMake") }

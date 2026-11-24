@@ -48,6 +48,12 @@ object NativeHost {
     external fun allocStats(out: LongArray): Int
     external fun probeElf(path: String): String
     external fun scanElf(path: String, pattern: String): Long
+
+    /** What the hook layer sees in the loaded engine: module, import, slot. */
+    external fun engineImportReport(): String
+
+    /** Installs, fires and restores an import hook inside this process. */
+    external fun importHookSelfTest(): String
     external fun transpileShader(source: String, stage: Int): String?
     external fun crc32(data: ByteArray): Int
     external fun setVolume(handle: Long, volume: Float): Int

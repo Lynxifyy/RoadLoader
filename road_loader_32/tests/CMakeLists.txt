@@ -15,12 +15,21 @@ endif()
 set(ROAD_SOURCES
   ../src/pl/memory/Signature.cpp
   ../src/pl/memory/ModuleMap.cpp
+  ../src/pl/memory/ImportResolver.cpp
   ../src/pl/memory/AllocatorOverride.cpp
   ../src/pl/hooks/ArmRelocator.cpp
   ../src/pl/hooks/InlineHook.cpp
+  ../src/pl/hooks/ImportHook.cpp
   ../src/pl/hooks/PrologueVerify.cpp
   ../src/pl/ipc/SharedRegion.cpp
-  ../src/pl/runtime/GameHooks.cpp)
+  ../src/pl/runtime/GameHooks.cpp
+  ../src/pl/runtime/EngineImports.cpp)
+
+# Two real shared libraries: the import tests hook a genuine PLT/GOT pair built
+# by this toolchain, not a fixture.
+add_library(road_test_provider SHARED provider_lib.cpp)
+add_library(road_test_consumer SHARED consumer_lib.cpp)
+target_link_libraries(road_test_consumer PRIVATE road_test_provider)
 
 add_executable(road_host_tests
   TestMain.cpp
@@ -28,6 +37,7 @@ add_executable(road_host_tests
   modulemap_tests.cpp
   relocator_tests.cpp
   hook_tests.cpp
+  import_tests.cpp
   ipc_tests.cpp
   allocator_tests.cpp
   abi_tests.cpp
@@ -39,6 +49,9 @@ target_compile_options(road_host_tests PRIVATE -Wall -Wextra -Wpedantic)
 # definitions stay out of the dynamic symbol table and the PLT resolves to
 # libstdc++ instead, so the test would silently measure the wrong allocator.
 target_link_options(road_host_tests PRIVATE -rdynamic)
+# The import tests dlopen these by name from the build directory.
+set_target_properties(road_test_provider road_test_consumer PROPERTIES
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 target_link_libraries(road_host_tests PRIVATE
   "${ROAD_CORE_LIB_DIR}/libroad_core_32.so"
   dl

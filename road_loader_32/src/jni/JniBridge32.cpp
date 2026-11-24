@@ -21,6 +21,7 @@
 #include "pl/Log.h"
 #include "pl/ipc/RoadCoreAbi.h"
 #include "pl/memory/Signature.h"
+#include "pl/runtime/EngineImports.h"
 
 namespace {
 
@@ -471,6 +472,24 @@ Java_dev_roadloader_core_NativeHost_scanElf(JNIEnv* env, jobject, jstring path, 
                            : -1;
   munmap(mapping, static_cast<size_t>(statBuffer.st_size));
   return result;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_roadloader_core_NativeHost_engineImportReport(JNIEnv* env, jobject) {
+  const auto probe = pl::runtime::EngineImports::probe(
+      pl::runtime::EngineImports::gameModule(), pl::runtime::EngineImports::swapBuffersSymbol());
+  return env->NewStringUTF(probe.describe().c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_roadloader_core_NativeHost_importHookSelfTest(JNIEnv* env, jobject) {
+  const auto probe = pl::runtime::EngineImports::selfTest();
+  std::string line = probe.describe();
+  char calls[48];
+  std::snprintf(calls, sizeof(calls), " calls=%llu",
+                static_cast<unsigned long long>(pl::runtime::EngineImports::selfTestCalls()));
+  line += calls;
+  return env->NewStringUTF(line.c_str());
 }
 
 extern "C" JNIEXPORT jstring JNICALL

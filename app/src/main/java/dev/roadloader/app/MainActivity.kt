@@ -77,6 +77,8 @@ class MainActivity : Activity() {
     private var pendingFlags = 0
     private var bound = false
     private var companionMessenger: Messenger? = null
+    private var importHookLine: String? = null
+    private var engineImportLine: String? = null
 
     private val attachReply = Messenger(
         Handler(Looper.getMainLooper()) { message ->
@@ -145,6 +147,24 @@ class MainActivity : Activity() {
         buildUi()
         requestNotificationPermission()
         refreshCoreStatus()
+        probeImportHooks()
+    }
+
+    /**
+     * Proves the import-hook path inside this process: install a hook on a
+     * symbol this library really imports, call it, restore it. The result is a
+     * line in the developer overlay, not a toast - it is evidence, not a
+     * notification.
+     */
+    private fun probeImportHooks() {
+        Thread {
+            val selfTest = runCatching { NativeHost.importHookSelfTest() }
+                .getOrElse { "unavailable (${it.javaClass.simpleName})" }
+            val engine = runCatching { NativeHost.engineImportReport() }
+                .getOrElse { "unavailable (${it.javaClass.simpleName})" }
+            importHookLine = selfTest
+            engineImportLine = engine
+        }.start()
     }
 
     override fun onDestroy() {
@@ -589,6 +609,8 @@ class MainActivity : Activity() {
                 append(" | ").append(audio?.health() ?: "no bridge")
                 audio?.error?.let { append(" (").append(it).append(")") }
                 append(" | render ").append(stats.renderAvgUs).append("us")
+                importHookLine?.let { append("\nimport hook ").append(it) }
+                engineImportLine?.let { append("\nengine ").append(it) }
                 lastEvent?.let { append("\nevent ").append(it) }
             }
         }

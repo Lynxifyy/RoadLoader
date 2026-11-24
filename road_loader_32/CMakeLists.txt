@@ -22,11 +22,14 @@ add_library(roadloader32 SHARED
   src/pl/ipc/SharedRegion.cpp
   src/pl/memory/Signature.cpp
   src/pl/memory/ModuleMap.cpp
+  src/pl/memory/ImportResolver.cpp
   src/pl/memory/AllocatorOverride.cpp
   src/pl/hooks/ArmRelocator.cpp
   src/pl/hooks/InlineHook.cpp
+  src/pl/hooks/ImportHook.cpp
   src/pl/hooks/PrologueVerify.cpp
-  src/pl/runtime/GameHooks.cpp)
+  src/pl/runtime/GameHooks.cpp
+  src/pl/runtime/EngineImports.cpp)
 
 target_include_directories(roadloader32 PRIVATE include)
 target_compile_definitions(roadloader32 PRIVATE PL_ENABLE_GL=1)

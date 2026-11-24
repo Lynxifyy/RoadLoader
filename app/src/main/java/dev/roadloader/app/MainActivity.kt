@@ -540,7 +540,16 @@ class MainActivity : Activity() {
             append(" | heap ").append(stats.heapUsedMb()).append(" MB")
             append(" | hb ").append(stats.heartbeatAgeMs).append("ms")
             append(" | in ").append(stats.inputConsumed)
-            append(" | ").append(if (companionIs64Bit) "64-bit" else "32-bit")
+            append(" | ").append(
+                when {
+                    companionAbi == null -> "abi unknown"
+                    // The status line is reused for errors, so the ABI note has
+                    // to live somewhere that does not get overwritten.
+                    companionIs64Bit && usingSatellite -> "64-bit (satellite)"
+                    companionIs64Bit -> "64-bit (same ABI as UI)"
+                    else -> "32-bit"
+                },
+            )
             if (firstFrameSeen && engineFps < 0.5) {
                 // The last frame stays on screen, so say it is stale instead of
                 // letting a frozen picture look like a running game.

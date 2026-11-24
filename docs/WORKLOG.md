@@ -312,13 +312,50 @@ New tests: `attach_rejects_a_region_larger_than_the_cap`,
 `the_cap_covers_the_largest_accepted_resolution`,
 `the_cap_is_below_a_32_bit_address_space`, `CompanionAttachTest` (4 cases).
 
+### Device run (Mobilebox, Android 14 arm64, SwiftShader)
+
+Both APKs installed on a cloud phone and driven through the REST API. The attach
+reply path, the ABI report and the 32-bit satellite all ran for real:
+
+| Launch | Companion log | Overlay |
+| --- | --- | --- |
+| `LAUNCH 32-BIT` (in-APK) | `attach from uid 10088: 6701056 bytes` then `attached: 64-bit (arm64-v8a 64-bit pid=2340)` | `FPS 44 (shown 15) ... in 0 | 64-bit (same ABI as UI)` |
+| `SATELLITE` | `attach from uid 10089: 6701056 bytes` then `attached: 32-bit (armeabi-v7a 32-bit pid=2433)` | `FPS 44 (shown 15) ... in 2 | 32-bit` |
+
+The finding is therefore measured, not inferred: the in-APK `:road32` process is
+64-bit on a 64-bit device, and only the armeabi-v7a satellite is 32-bit.
+
+Other device results from the same session:
+
+* frames streamed from both companions (`401 produced / 401 presented`,
+  `710 produced / 707 presented`), engine 44-46 FPS against 15-16 presented on
+  the software GPU - the two-number split of M2 behaves as designed.
+* input round trip: tapping the surface gave `in 9/9`, and after the restart
+  `in 2/2`; audio `4/4` and `2/2` blocks.
+* killing the satellite mid-stream (force-stop) produced
+  `32-bit engine stopped responding (heartbeat lost).` and `companion dead` in
+  the overlay with `hb` climbing to 1740 ms, instead of a frozen picture.
+
+Two defects the device run exposed, both fixed here:
+
+1. The ABI warning was written to the status line, which the first frame
+   overwrites with `Streaming frames from ...` - a warning visible for 300 ms.
+   It now lives in the overlay (`64-bit (same ABI as UI)`, `32-bit`,
+   `64-bit (satellite)`, `abi unknown` before an attach).
+2. `AudioTrack` logged `releaseBuffer() ... disabled due to previous underrun,
+   restarting` twice in one session. The audio path plays, but the 64-bit
+   consumer underruns; this is recorded for the audio milestone rather than
+   fixed here.
+
+Screenshots: `docs/screenshots/m3-inapk-64bit.jpg` (in-APK companion, 64-bit) and
+`docs/screenshots/m3-satellite-32bit.jpg` (satellite, 32-bit).
+
 ### NOT RUN
 
-* No device or emulator, so nothing here was observed on hardware: the reply
-  `arg2`/Bundle path, the satellite installing as 32-bit, and `Process.is64Bit()`
-  returning false were not executed. They are the parts most worth checking on
-  the cloud phone.
-* The 64-bit-only-device case (satellite refuses to install) is untested.
+* The 64-bit-only-device case (satellite refuses to install) is untested; the
+  cloud phone supports 32-bit, so the refusal path has no device to run on.
+* The `MSG_QUERY_ABI` round trip has no caller yet; the ABI arrives with the
+  attach reply.
 
 ### Residual risk
 

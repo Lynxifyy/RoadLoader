@@ -331,6 +331,35 @@ std::string EngineImports::loadedModules(std::string_view filter, size_t limit) 
   return out;
 }
 
+std::string EngineImports::describeFile(const char* path, const char* symbol) {
+  if (path == nullptr || path[0] == '\0') {
+    return "no staged engine";
+  }
+  std::string name = path;
+  const size_t slash = name.find_last_of('/');
+  if (slash != std::string::npos) {
+    name = name.substr(slash + 1);
+  }
+  const auto table = memory::readImportsFromFile(path);
+  if (!table.has_value()) {
+    return name + ": not readable as an ELF";
+  }
+  std::string out = name + " (staged) imports=" + std::to_string(table->slots.size());
+  const auto* found = table->find(symbol != nullptr ? symbol : "eglSwapBuffers");
+  if (found == nullptr) {
+    out += " ";
+    out += symbol != nullptr ? symbol : "eglSwapBuffers";
+    out += ": not imported";
+    return out;
+  }
+  char buffer[64];
+  std::snprintf(buffer, sizeof(buffer), ": imported reloc=%u", found->relocType);
+  out += " ";
+  out += found->name;
+  out += buffer;
+  return out;
+}
+
 std::string EngineImports::moduleDebug(const char* name) {
   const auto mappings = currentMappings();
   char header[96];

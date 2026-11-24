@@ -53,6 +53,10 @@ class EngineImports {
   /// One compact line explaining how a module name matched, or did not.
   static std::string moduleDebug(const char* name);
 
+  /// One line describing the imports of an engine file that is not loaded,
+  /// which is the state of a staged engine before the game starts.
+  static std::string describeFile(const char* path, const char* symbol = "eglSwapBuffers");
+
   /// Proves the mechanism inside the running process: installs a counting hook
   /// on a symbol this library really imports, calls it, checks the counter, then
   /// restores the original and calls again. `module`/`symbol` default to this

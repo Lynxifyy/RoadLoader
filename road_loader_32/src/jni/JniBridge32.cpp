@@ -475,6 +475,16 @@ Java_dev_roadloader_core_NativeHost_scanElf(JNIEnv* env, jobject, jstring path, 
 }
 
 extern "C" JNIEXPORT jstring JNICALL
+Java_dev_roadloader_core_NativeHost_engineFileReport(JNIEnv* env, jobject, jstring path) {
+  const char* text = path != nullptr ? env->GetStringUTFChars(path, nullptr) : nullptr;
+  std::string report = pl::runtime::EngineImports::describeFile(text);
+  if (text != nullptr) {
+    env->ReleaseStringUTFChars(path, text);
+  }
+  return env->NewStringUTF(report.c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
 Java_dev_roadloader_core_NativeHost_engineImportReport(JNIEnv* env, jobject) {
   const auto probe = pl::runtime::EngineImports::probe(
       pl::runtime::EngineImports::gameModule(), pl::runtime::EngineImports::swapBuffersSymbol());

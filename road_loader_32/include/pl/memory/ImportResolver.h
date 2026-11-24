@@ -50,6 +50,13 @@ std::optional<ImportTable> readImportsAt(uintptr_t base, size_t size = 0);
 /// imports. `name` is matched as a path suffix.
 std::optional<ImportTable> readModuleImports(std::string_view name);
 
+/// Reads the imports of an ELF file on disk, which need not be loaded.
+///
+/// Only the symbol names and relocation kinds are meaningful: nothing has been
+/// relocated, so every slot carries the file's addend rather than an address,
+/// and `slot`/`target` must not be dereferenced.
+std::optional<ImportTable> readImportsFromFile(std::string_view path);
+
 /// True when `address` lies inside an executable mapping of this process.
 /// Used to tell a resolved import from a not-yet-bound PLT stub.
 bool isExecutableAddress(uintptr_t address);

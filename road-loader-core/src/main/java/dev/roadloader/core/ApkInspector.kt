@@ -36,6 +36,10 @@ object ApkInspector {
         digest.digest().joinToString("") { "%02x".format(it) }
     }.getOrNull()
 
+    /** Where an imported APK's engine is kept between launches. */
+    fun stagedEngine(context: Context): File =
+        File(File(context.filesDir, "engine"), "libminecraftpe.so")
+
     fun inspect(context: Context, apk: File): Report {
         val archiveInfo = context.packageManager.getPackageArchiveInfo(apk.absolutePath, 0)
         var packageName = archiveInfo?.packageName
@@ -72,7 +76,7 @@ object ApkInspector {
                     // The engine is kept, not deleted: it is what the hook layer
                     // reads, and a 98 MB copy is worth keeping rather than
                     // repeating on every inspection.
-                    val staged = File(File(context.filesDir, "engine"), "libminecraftpe.so")
+                    val staged = stagedEngine(context)
                     staged.parentFile?.mkdirs()
                     if (staged.length() != target.size) {
                         zip.getInputStream(target).use { input ->

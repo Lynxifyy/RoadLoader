@@ -60,6 +60,9 @@ object NativeHost {
 
     /** One line explaining how a module name matched, or did not. */
     external fun moduleDebug(name: String): String
+
+    /** Imports of an engine file on disk, which need not be loaded. */
+    external fun engineFileReport(path: String): String
     external fun transpileShader(source: String, stage: Int): String?
     external fun crc32(data: ByteArray): Int
     external fun setVolume(handle: Long, volume: Float): Int

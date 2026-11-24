@@ -179,6 +179,47 @@ PL_TEST(a_destroyed_hook_restores_the_import) {
   PL_CHECK_EQ(sum(2, 3), 5);
 }
 
+PL_TEST(a_file_that_is_not_loaded_still_reports_its_imports) {
+  // The test binary is a real ELF on disk, which is the same situation as a
+  // staged engine: parseable, but nothing has been relocated.
+  Dl_info info{};
+  PL_CHECK(dladdr(reinterpret_cast<void*>(&pl::memory::readImportsAt), &info) != 0);
+  if (info.dli_fname == nullptr) return;
+
+  auto table = pl::memory::readImportsFromFile(info.dli_fname);
+  PL_CHECK(table.has_value());
+  if (!table.has_value()) return;
+
+  PL_CHECK(!table->slots.empty());
+  for (const auto& slot : table->slots) {
+    PL_CHECK(!slot.name.empty());
+    // Nothing was relocated, so no address may be claimed.
+    PL_CHECK_EQ(slot.target, uintptr_t{0});
+    PL_CHECK_EQ(slot.slot, uintptr_t{0});
+  }
+  PL_CHECK(table->path == info.dli_fname);
+}
+
+PL_TEST(a_missing_file_reports_nothing_rather_than_an_empty_table) {
+  PL_CHECK(!pl::memory::readImportsFromFile("/nonexistent/libengine.so").has_value());
+  PL_CHECK(!pl::memory::readImportsFromFile("").has_value());
+}
+
+PL_TEST(a_staged_engine_line_names_the_symbol_it_imports) {
+  Dl_info info{};
+  PL_CHECK(dladdr(reinterpret_cast<void*>(&pl::memory::readImportsAt), &info) != 0);
+  if (info.dli_fname == nullptr) return;
+
+  const std::string line = pl::runtime::EngineImports::describeFile(info.dli_fname);
+  PL_CHECK(line.find("(staged) imports=") != std::string::npos);
+
+  const std::string absent = pl::runtime::EngineImports::describeFile(info.dli_fname, "no_such_symbol_here");
+  PL_CHECK(absent.find("no_such_symbol_here: not imported") != std::string::npos);
+
+  const std::string missing = pl::runtime::EngineImports::describeFile("/nonexistent/libengine.so");
+  PL_CHECK(missing.find("not readable as an ELF") != std::string::npos);
+}
+
 PL_TEST(an_absent_engine_is_reported_not_guessed) {
   // The game is not loaded in this process, so the probe must say so rather
   // than resolve something that merely looks close.

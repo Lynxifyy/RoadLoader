@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Intent
+import android.provider.OpenableColumns
 import android.content.ServiceConnection
 import android.graphics.Color
 import android.net.Uri
@@ -174,6 +175,14 @@ class MainActivity : Activity() {
             val debug = runCatching { NativeHost.moduleDebug("libroadloader32.so") }
                 .getOrElse { "unavailable" }
             Log.i("RoadLoader", "module debug: $debug")
+            restoreImported()
+            val staged = ApkInspector.stagedEngine(this)
+            if (staged.isFile) {
+                val line = runCatching { NativeHost.engineFileReport(staged.absolutePath) }
+                    .getOrElse { "unavailable" }
+                Log.i("RoadLoader", "staged engine: $line")
+                runOnUiThread { engineImportLine = line }
+            }
         }.start()
     }
 
@@ -352,45 +361,95 @@ class MainActivity : Activity() {
         data?.data?.let { copyAndInspect(it) }
     }
 
+    /** Size the document provider reports, or -1 when it does not say. */
+    private fun documentSize(uri: Uri): Long = runCatching {
+        contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else -1L
+        } ?: -1L
+    }.getOrDefault(-1L)
+
     private fun copyAndInspect(uri: Uri) {
         statusView.text = "Copying APK..."
         Thread {
             val target = File(filesDir, "imported.apk")
-            val copied = runCatching {
-                contentResolver.openInputStream(uri)?.use { input ->
-                    FileOutputStream(target).use { output -> input.copyTo(output) }
+            val expected = documentSize(uri)
+            val free = runCatching { filesDir.usableSpace }.getOrDefault(0L)
+            if (expected > 0 && free < expected + IMPORT_HEADROOM_BYTES) {
+                runOnUiThread {
+                    statusView.text = "Not enough space: the APK needs ${expected / MEBIBYTE} MB."
                 }
-                target
-            }.getOrNull()
-            if (copied == null) {
-                runOnUiThread { statusView.text = "Could not copy the selected file." }
                 return@Thread
             }
-            val report = ApkInspector.inspect(this, copied)
-            importedApk = copied
-            val assets = RoadAssets.listAssets(copied)
-            runOnUiThread {
-                statusView.text = buildString {
-                    append(report.name)
-                    report.packageName?.let { append("  ").append(it) }
-                    report.versionName?.let { append(" v").append(it) }
-                    append('\n').append(report.summary)
-                    if (assets.isNotEmpty()) {
-                        append("\nassets: ").append(assets.joinToString(", "))
+            // A stale copy from an earlier attempt must not be mistaken for the
+            // file the user just picked, so it goes first and the byte count is
+            // checked afterwards.
+            target.delete()
+            val copied = runCatching {
+                val input = contentResolver.openInputStream(uri) ?: return@runCatching -1L
+                input.use { source ->
+                    FileOutputStream(target).use { output ->
+                        source.copyTo(output, COPY_BUFFER_BYTES)
                     }
-                    report.engine?.let { engine ->
-                        append("\nengine staged: ").append(engine.absolutePath)
-                        append(" (").append(engine.length() / (1024 * 1024)).append(" MB)")
-                    }
-                    append("\n\nThe demo renderer runs without the game. The engine is ")
-                    append("staged so the hook layer can read its imports:")
-                    append("\n").append(
-                        runCatching { NativeHost.engineImportReport() }
-                            .getOrElse { "engine probe unavailable" },
-                    )
                 }
+                target.length()
+            }.getOrElse {
+                Log.w("RoadLoader", "import copy failed", it)
+                -1L
             }
+            Log.i("RoadLoader", "import copy: expected=$expected copied=$copied")
+            if (copied <= 0 || (expected > 0 && copied != expected)) {
+                runOnUiThread {
+                    statusView.text = buildString {
+                        append("Could not copy the selected file")
+                        if (expected > 0) append(" (wanted $expected bytes, got $copied)")
+                        append('.')
+                    }
+                }
+                return@Thread
+            }
+            val report = ApkInspector.inspect(this, target)
+            importedApk = target
+            val assets = RoadAssets.listAssets(target)
+            runOnUiThread { statusView.text = describeImport(report, assets) }
         }.start()
+    }
+
+    /** Re-reports an APK imported in an earlier session, without copying it again. */
+    private fun restoreImported() {
+        val apk = File(filesDir, "imported.apk")
+        if (!apk.isFile || apk.length() == 0L) return
+        Thread {
+            val report = ApkInspector.inspect(this, apk)
+            val assets = RoadAssets.listAssets(apk)
+            importedApk = apk
+            runOnUiThread { statusView.text = describeImport(report, assets) }
+        }.start()
+    }
+
+    private fun describeImport(report: ApkInspector.Report, assets: List<String>): String = buildString {
+        append(report.name)
+        report.packageName?.let { append("  ").append(it) }
+        report.versionName?.let { append(" v").append(it) }
+        append('\n').append(report.summary)
+        if (assets.isNotEmpty()) {
+            append("\nassets: ").append(assets.joinToString(", "))
+        }
+        report.engine?.let { engineFile ->
+            append("\nengine staged: ").append(engineFile.absolutePath)
+            append(" (").append(engineFile.length() / (1024 * 1024)).append(" MB)")
+        }
+        append("\n\nThe demo renderer runs without the game. The engine is ")
+        append("staged so the hook layer can read its imports:")
+        append("\n").append(
+            runCatching { NativeHost.engineImportReport() }
+                .getOrElse { "engine probe unavailable" },
+        )
+        report.engine?.let { engineFile ->
+            append("\n").append(
+                runCatching { NativeHost.engineFileReport(engineFile.absolutePath) }
+                    .getOrElse { "staged engine unreadable" },
+            )
+        }
     }
 
     // -------------------------------------------------------------- launch
@@ -773,6 +832,9 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_IMPORT = 1001
+        private const val MEBIBYTE = 1024L * 1024L
+        private const val IMPORT_HEADROOM_BYTES = 64L * MEBIBYTE
+        private const val COPY_BUFFER_BYTES = 256 * 1024
         private const val STATS_INTERVAL_MS = 400L
         private const val RENDER_WIDTH = 960
         private const val RENDER_HEIGHT = 540

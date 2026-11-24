@@ -368,8 +368,16 @@ class MainActivity : Activity() {
                     if (assets.isNotEmpty()) {
                         append("\nassets: ").append(assets.joinToString(", "))
                     }
-                    append("\n\nThe demo renderer runs without the game; the APK is ")
-                    append("inspected and staged for the hook layer.")
+                    report.engine?.let { engine ->
+                        append("\nengine staged: ").append(engine.absolutePath)
+                        append(" (").append(engine.length() / (1024 * 1024)).append(" MB)")
+                    }
+                    append("\n\nThe demo renderer runs without the game. The engine is ")
+                    append("staged so the hook layer can read its imports:")
+                    append("\n").append(
+                        runCatching { NativeHost.engineImportReport() }
+                            .getOrElse { "engine probe unavailable" },
+                    )
                 }
             }
         }.start()

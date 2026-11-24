@@ -36,6 +36,20 @@ object RoadConstants {
 
     const val FRAME_SLOT_COUNT = 3
 
+    /** The only pixel format the companion publishes: 8-bit RGBA, 4 bytes/px. */
+    const val FRAME_FORMAT_RGBA8888 = 1
+
+    // Indexes of the `LongArray` filled by `NativeHost.pollFrame`.
+    const val FRAME_INFO_PTR = 0
+    const val FRAME_INFO_SEQ = 1
+    const val FRAME_INFO_SLOT = 2
+    const val FRAME_INFO_WIDTH = 3
+    const val FRAME_INFO_HEIGHT = 4
+    const val FRAME_INFO_STRIDE = 5
+    const val FRAME_INFO_LENGTH = 6
+    const val FRAME_INFO_PUBLISHED_NS = 7
+    const val FRAME_INFO_FIELDS = 8
+
     // Self-test bits reported by the core.
     const val TEST_MESH = 1 shl 0
     const val TEST_MATH = 1 shl 1

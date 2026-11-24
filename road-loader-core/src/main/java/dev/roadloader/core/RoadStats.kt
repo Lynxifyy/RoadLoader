@@ -67,8 +67,9 @@ class RoadStats(private val values: LongArray) {
         val heap = "${heapUsedMb()}/${heapLimitMb()} MB"
         val heartbeat = if (heartbeatAgeMs == Long.MAX_VALUE) "never" else "${heartbeatAgeMs}ms"
         return "pid ${pid} | ${statusName(status)} | heap $heap | hb $heartbeat\n" +
-            "frames ${frameCount} | in ${inputConsumed}/${inputPushed} | audio ${audioConsumed}/${audioPushed}\n" +
-            "render ${renderAvgUs}us avg / ${renderMaxUs}us max | self-test 0x${selfTest.toString(16)}"
+            "frames $frameCount produced / $presented presented / $droppedFrames dropped\n" +
+            "in ${inputConsumed}/${inputPushed} | audio ${audioConsumed}/${audioPushed}" +
+            " | render ${renderAvgUs}us avg / ${renderMaxUs}us max | self-test 0x${selfTest.toString(16)}"
     }
 
     companion object {

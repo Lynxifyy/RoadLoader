@@ -167,3 +167,84 @@ The new tests fail against the M0 code:
   install path keeps the window to one `memcpy` and flushes the instruction
   cache, but it cannot stop another thread from executing the half-written
   prologue. Suspending threads around the patch is not implemented.
+
+## M2 - Frame path and honest frame rate
+
+### What was wrong
+
+1. **The number labelled FPS was the presenter's draw rate.** `FrameRenderer`
+   incremented `framesThisSecond` on every `onDrawFrame`, and the view runs with
+   `RENDERMODE_CONTINUOUSLY`, so it reported the display refresh rate (or the
+   software renderer's rate) no matter what the companion produced. A stopped
+   companion still showed 60. The architecture doc then described that number as
+   the demo scene's FPS, which made the mistake look like a measurement.
+2. **The frame descriptor was not checked.** `RoadSession.pollFrame` trusted
+   `width`, `height` and `stride` from shared memory and `FrameSurfaceView`
+   uploaded `width * height * 4` bytes, ignoring `stride`. A padded stride would
+   shear the image, and a slot smaller than the claimed size would upload past
+   the end of the mapping.
+3. **A refused frame leaked its slot.** The poll claims a slot (`READY ->
+   READING`); the old code had no path that released it without drawing, so a
+   descriptor that failed to map a buffer would burn one of the three slots per
+   poll and stall the stream.
+4. **Nothing measured frame age**, and nothing said the stream had stalled: the
+   last frame stayed on screen while the overlay kept printing the last FPS.
+5. **`RoadStats.describe()` hid the presentation counters** (presented and
+   dropped frames existed in the header but were never shown).
+
+### Changes
+
+* `FrameContract` (new, `road-loader-core`): validates size, stride, declared
+  length and slot capacity, and reports the reason instead of drawing.
+* `FrameRateCounter` (new): frames per second from a monotonic counter, with a
+  minimum window, a reset when the counter goes backwards, and no rate on the
+  first sample.
+* `RoadSession.pollFrame`: validates through `FrameContract`, releases the slot
+  on every refusal, logs the first problem once, and returns `length` and
+  `publishedNs` alongside the pixels. Frame-info indices moved into
+  `RoadConstants` (`FRAME_INFO_*`) instead of magic numbers.
+* `FrameSurfaceView`: counts only frames that were actually received and
+  uploaded, skips a re-upload when the sequence did not change, repacks rows
+  into a scratch buffer when `stride != width * 4` (logged once), and reports
+  `PresentStats(fps, frameAgeMs, framesTotal)` once per second. `frameAgeMs` is
+  measured from the companion's publish timestamp to the upload, on the same
+  `CLOCK_MONOTONIC` the UI reads.
+* `MainActivity`: the overlay now shows `FPS <engine> (shown <presented>)`,
+  where engine is the `frame_count` rate between stats polls. Developer mode adds
+  `age` and the presented total. The counters reset on stop, and `no frames`
+  appears when the stream stalls after the first frame.
+* `RoadStats.describe()` reports produced / presented / dropped frames.
+* `docs/ROAD_LOADER_ARCHITECTURE.md` explains which number is which and states
+  that input latency is not measured, because nothing records when the companion
+  consumed an event.
+
+### Verification
+
+| Suite | Command | Result |
+| --- | --- | --- |
+| Kotlin | `./gradlew :road-loader-core:testDebugUnitTest` | 19 tests, 0 failures (was 6) |
+| Rust | `cargo test --workspace` | 102 passed, 0 failed |
+| C++ host | `scripts/run_host_tests.sh` | 79 cases, 0 failures |
+| Android | `./gradlew :app:assembleDebug :satellite:assembleDebug` | BUILD SUCCESSFUL; new strings present in `classes.dex` |
+
+The new Kotlin tests fail against the old code: `FrameContract` and
+`FrameRateCounter` did not exist, so `FrameContractTest` and
+`FrameRateCounterTest` could not compile, and `RoadStatsTest` did not see the
+presentation counters.
+
+### NOT RUN
+
+* No device or emulator is attached, so the overlay was not read on screen and
+  no frame age was observed on hardware. The frame-age value depends on the
+  companion's `CLOCK_MONOTONIC` and the UI's `System.nanoTime` sharing an epoch,
+  which is true on Android/Linux but was not exercised here.
+* The stride repack path was not exercised end to end: the companion always
+  publishes `stride == width * 4`, so only `FrameContract`'s arithmetic is
+  covered by tests, not a real padded frame.
+
+### Environment note
+
+`~/.cargo` disappeared from this container between M1 and M2 (the M1 build used
+it). Rust 1.100.0 was reinstalled with rustup and the `armv7-linux-androideabi`,
+`aarch64-linux-android` and `x86_64-unknown-linux-gnu` targets, then all suites
+were re-run from that toolchain.

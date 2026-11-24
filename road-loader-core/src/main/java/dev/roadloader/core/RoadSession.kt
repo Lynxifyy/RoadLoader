@@ -3,13 +3,21 @@ package dev.roadloader.core
 import java.io.Closeable
 import java.nio.ByteBuffer
 
-/** A frame published by the companion. The buffer stays valid until released. */
+/**
+ * A frame published by the companion. The buffer stays valid until released.
+ *
+ * [stride] is bytes per row and may exceed `width * 4`; [length] is the size the
+ * companion reports for the slot, and [publishedNs] is on the companion's
+ * monotonic clock, which is the same clock `System.nanoTime` reads.
+ */
 data class RoadFrame(
     val slot: Int,
     val sequence: Long,
     val width: Int,
     val height: Int,
     val stride: Int,
+    val length: Int,
+    val publishedNs: Long,
     val buffer: ByteBuffer,
 )
 
@@ -23,7 +31,10 @@ class RoadSession private constructor(
     val height: Int,
 ) : Closeable {
     private val frameBuffers = arrayOfNulls<ByteBuffer>(RoadConstants.FRAME_SLOT_COUNT)
-    private val frameInfo = LongArray(FRAME_INFO_LENGTH)
+    private val frameInfo = LongArray(RoadConstants.FRAME_INFO_FIELDS)
+
+    @Volatile
+    private var contractWarned = false
     private val statsValues = LongArray(RoadConstants.STATS_LENGTH)
 
     @Volatile
@@ -39,18 +50,43 @@ class RoadSession private constructor(
         return buffer
     }
 
-    /** Returns the newest published frame, or null when nothing changed. */
+    /**
+     * Returns the newest published frame, or null when nothing changed.
+     *
+     * The slot is claimed by the poll, so every path that does not return a
+     * frame releases it again; a slot leaked here would stall the pipeline
+     * after `FRAME_SLOT_COUNT` bad frames.
+     */
     fun pollFrame(): RoadFrame? {
         if (closed) return null
         if (NativeHost.pollFrame(handle, frameInfo) != 1) return null
-        val slot = frameInfo[2].toInt()
-        val buffer = frameBuffer(slot) ?: return null
+        val slot = frameInfo[RoadConstants.FRAME_INFO_SLOT].toInt()
+        val buffer = frameBuffer(slot)
+        if (buffer == null) {
+            NativeHost.releaseFrame(handle, slot)
+            return null
+        }
+        val width = frameInfo[RoadConstants.FRAME_INFO_WIDTH].toInt()
+        val height = frameInfo[RoadConstants.FRAME_INFO_HEIGHT].toInt()
+        val stride = frameInfo[RoadConstants.FRAME_INFO_STRIDE].toInt()
+        val length = frameInfo[RoadConstants.FRAME_INFO_LENGTH].toInt()
+        val problem = FrameContract.check(width, height, stride, length, buffer.capacity())
+        if (problem != null) {
+            if (!contractWarned) {
+                contractWarned = true
+                android.util.Log.w(TAG, "dropping frame slot $slot: $problem")
+            }
+            NativeHost.releaseFrame(handle, slot)
+            return null
+        }
         return RoadFrame(
             slot = slot,
-            sequence = frameInfo[1],
-            width = frameInfo[3].toInt(),
-            height = frameInfo[4].toInt(),
-            stride = frameInfo[5].toInt(),
+            sequence = frameInfo[RoadConstants.FRAME_INFO_SEQ],
+            width = width,
+            height = height,
+            stride = stride,
+            length = length,
+            publishedNs = frameInfo[RoadConstants.FRAME_INFO_PUBLISHED_NS],
             buffer = buffer,
         )
     }
@@ -118,7 +154,7 @@ class RoadSession private constructor(
     }
 
     companion object {
-        private const val FRAME_INFO_LENGTH = 8
+        private const val TAG = "RoadSession"
 
         fun create(width: Int, height: Int): RoadSession? {
             if (!NativeLibrary.ensureLoaded()) return null

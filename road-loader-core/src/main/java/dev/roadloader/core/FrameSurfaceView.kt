@@ -4,11 +4,22 @@ import android.content.Context
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.view.MotionEvent
+import android.util.Log
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+
+/**
+ * What the presenter measured over the last second.
+ *
+ * [fps] counts frames that were actually received from the companion and drawn;
+ * it is 0 when nothing arrives. [frameAgeMs] is the age of the newest frame when
+ * it was drawn, measured from the companion's publish timestamp to the upload,
+ * so it covers capture, the shared slot and the texture upload.
+ */
+data class PresentStats(val fps: Int, val frameAgeMs: Int, val framesTotal: Long)
 
 /**
  * Draws the companion's RGBA frames on a fullscreen quad and forwards touches
@@ -23,14 +34,14 @@ class FrameSurfaceView(context: Context) : GLSurfaceView(context) {
             renderer.session = value
         }
 
-    var onFps: ((Int) -> Unit)? = null
+    var onPresentStats: ((PresentStats) -> Unit)? = null
     var onFirstFrame: (() -> Unit)? = null
 
     init {
         setEGLContextClientVersion(2)
         setRenderer(renderer)
         renderMode = RENDERMODE_CONTINUOUSLY
-        renderer.onFps = { fps -> post { onFps?.invoke(fps) } }
+        renderer.onPresentStats = { stats -> post { onPresentStats?.invoke(stats) } }
         renderer.onFirstFrame = { post { onFirstFrame?.invoke() } }
     }
 
@@ -71,7 +82,7 @@ class FrameSurfaceView(context: Context) : GLSurfaceView(context) {
 
     private class FrameRenderer : Renderer {
         var session: RoadSession? = null
-        var onFps: ((Int) -> Unit)? = null
+        var onPresentStats: ((PresentStats) -> Unit)? = null
         var onFirstFrame: (() -> Unit)? = null
 
         private var program = 0
@@ -84,7 +95,12 @@ class FrameSurfaceView(context: Context) : GLSurfaceView(context) {
         private var textureHeight = 0
         private var firstFrameDelivered = false
         private var framesThisSecond = 0
+        private var framesTotal = 0L
+        private var lastSequence = -1L
+        private var newestAgeMs = 0
         private var secondStartedNs = System.nanoTime()
+        private var packedBuffer: ByteBuffer? = null
+        private var strideWarned = false
 
         override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
             program = buildProgram(VERTEX_SHADER, FRAGMENT_SHADER)
@@ -118,7 +134,18 @@ class FrameSurfaceView(context: Context) : GLSurfaceView(context) {
             if (active != null) {
                 val frame = active.pollFrame()
                 if (frame != null) {
-                    upload(frame)
+                    val now = System.nanoTime()
+                    if (frame.publishedNs > 0 && now > frame.publishedNs) {
+                        newestAgeMs = ((now - frame.publishedNs) / 1_000_000L).toInt()
+                    }
+                    // A slot can be republished with the same pixels; skipping
+                    // the upload keeps the GL thread free for the next frame.
+                    if (frame.sequence != lastSequence) {
+                        lastSequence = frame.sequence
+                        upload(frame)
+                        framesThisSecond += 1
+                        framesTotal += 1
+                    }
                     active.releaseFrame(frame.slot)
                     if (!firstFrameDelivered) {
                         firstFrameDelivered = true
@@ -129,19 +156,20 @@ class FrameSurfaceView(context: Context) : GLSurfaceView(context) {
             if (textureWidth > 0 && textureHeight > 0) {
                 draw()
             }
-            framesThisSecond += 1
             val now = System.nanoTime()
             if (now - secondStartedNs >= 1_000_000_000L) {
-                onFps?.invoke(framesThisSecond)
+                onPresentStats?.invoke(PresentStats(framesThisSecond, newestAgeMs, framesTotal))
                 framesThisSecond = 0
+                newestAgeMs = 0
                 secondStartedNs = now
             }
         }
 
         private fun upload(frame: RoadFrame) {
+            val pixels = packedPixels(frame)
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture)
-            frame.buffer.position(0)
-            frame.buffer.limit(minOf(frame.buffer.capacity(), frame.width * frame.height * 4))
+            pixels.position(0)
+            pixels.limit(frame.width * frame.height * 4)
             if (frame.width != textureWidth || frame.height != textureHeight) {
                 GLES20.glTexImage2D(
                     GLES20.GL_TEXTURE_2D,
@@ -152,7 +180,7 @@ class FrameSurfaceView(context: Context) : GLSurfaceView(context) {
                     0,
                     GLES20.GL_RGBA,
                     GLES20.GL_UNSIGNED_BYTE,
-                    frame.buffer,
+                    pixels,
                 )
                 textureWidth = frame.width
                 textureHeight = frame.height
@@ -166,9 +194,44 @@ class FrameSurfaceView(context: Context) : GLSurfaceView(context) {
                     frame.height,
                     GLES20.GL_RGBA,
                     GLES20.GL_UNSIGNED_BYTE,
-                    frame.buffer,
+                    pixels,
                 )
             }
+        }
+
+        /**
+         * Returns a buffer whose rows are packed at `width * 4` bytes.
+         *
+         * The companion publishes packed rows, so the common path returns the
+         * shared buffer untouched. A padded stride is repacked instead of being
+         * uploaded with the wrong row length, which would shear the image.
+         */
+        private fun packedPixels(frame: RoadFrame): ByteBuffer {
+            val packed = frame.width * frame.height * 4
+            val shared = frame.buffer
+            if (FrameContract.isTightlyPacked(frame.width, frame.stride)) {
+                return shared
+            }
+            if (!strideWarned) {
+                strideWarned = true
+                Log.w(TAG, "stride ${frame.stride} != ${frame.width * 4}, repacking rows")
+            }
+            val scratch = packedBuffer?.takeIf { it.capacity() >= packed }
+                ?: ByteBuffer.allocateDirect(packed).order(ByteOrder.nativeOrder()).also {
+                    packedBuffer = it
+                }
+            val rowBytes = frame.width * 4
+            val source = shared.duplicate()
+            source.position(0)
+            source.limit(minOf(shared.capacity(), frame.stride * frame.height))
+            scratch.position(0)
+            for (row in 0 until frame.height) {
+                source.position(row * frame.stride)
+                source.limit(row * frame.stride + rowBytes)
+                scratch.put(source)
+                source.limit(minOf(shared.capacity(), frame.stride * frame.height))
+            }
+            return scratch
         }
 
         private fun draw() {
@@ -236,6 +299,8 @@ class FrameSurfaceView(context: Context) : GLSurfaceView(context) {
         }
 
         companion object {
+            private const val TAG = "FrameSurfaceView"
+
             private const val VERTEX_SHADER = """
                 attribute vec2 aPosition;
                 attribute vec2 aTexCoord;

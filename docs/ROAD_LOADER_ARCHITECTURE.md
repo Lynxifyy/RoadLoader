@@ -262,7 +262,7 @@ Cloud phone: Android 14, 2 GB RAM, SwiftShader (software GPU), 2400x1080.
 | Check | Result |
 | --- | --- |
 | Companion spawn (`:road32`) | pid reported, status `running` |
-| Frame stream | 400-1600 frames per run, render 190-310 us avg |
+| Frame stream | 400-1600 frames per run, render 190-310 us avg, engine 60 FPS |
 | Input round trip | `in 2/2` after a tap (down + up) |
 | Audio bridge | `audio 2/2`, both blocks written to `AudioTrack` |
 | Asset stream | 512 KiB in 125 ms (4.0 MiB/s), 2260/2260 chunks |
@@ -270,6 +270,25 @@ Cloud phone: Android 14, 2 GB RAM, SwiftShader (software GPU), 2400x1080.
 | Satellite (cross-app) | frames streamed from the satellite process |
 | Stop | "Companion stopped", no crash records in logcat |
 
-The software GPU caps the demo scene at 9-16 FPS; that is the emulator's
-renderer, not the bridge. Frame production stayed at 60 Hz while the UI drew at
-the rate the GPU allowed, which is what the frame-slot pacing is for.
+### What the numbers mean
+
+The overlay shows `FPS <engine> (shown <presented>)`:
+
+* **engine** is the rate the companion produced frames, computed from the
+  `frame_count` counter between two stats polls. It is the game's rate.
+* **shown** is the rate frames were actually received and uploaded by the GL
+  thread. It is lower than the engine rate when the UI drops frames, and it is
+  `0` when nothing arrives.
+
+Developer mode adds `age`, the age of the newest frame when it was uploaded,
+measured from the companion's publish timestamp (the same `CLOCK_MONOTONIC` the
+UI reads). It covers capture, the shared slot and the texture upload.
+
+On the cloud phone the software GPU (SwiftShader) drew the demo scene at 9-16
+presented frames per second while the companion kept producing at 60. Earlier
+notes called that draw rate "FPS" without qualification; that was the presenter,
+not the engine. The engine rate on that device is 60.
+
+Input latency is **not** measured: an input event carries the UI timestamp, but
+nothing records when the companion consumed it, so no input-to-photon number is
+reported anywhere. Do not quote one until the consume timestamp is published.

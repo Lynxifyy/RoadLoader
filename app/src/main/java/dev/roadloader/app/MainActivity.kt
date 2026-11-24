@@ -25,6 +25,7 @@ import android.widget.Toast
 import dev.roadloader.core.ApkInspector
 import dev.roadloader.core.CompanionServiceBase
 import dev.roadloader.core.CrashGuard
+import dev.roadloader.core.FrameRateCounter
 import dev.roadloader.core.FrameSurfaceView
 import dev.roadloader.core.NativeHost
 import dev.roadloader.core.NativeLibrary
@@ -56,7 +57,11 @@ class MainActivity : Activity() {
     private var shadersEnabled = true
     private var safeMode = false
     private var developerMode = false
-    private var fps = 0
+    private var presentedFps = 0
+    private var presentedTotal = 0L
+    private var frameAgeMs = 0
+    private var engineFps = 0.0
+    private val engineRate = FrameRateCounter()
     private var lastMemoryWarningAt = 0L
     private var lastEvent: String? = null
     private var pendingDescriptor: ParcelFileDescriptor? = null
@@ -159,7 +164,11 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
             )
             alpha = 0f
-            onFps = { value -> fps = value }
+            onPresentStats = { stats ->
+                presentedFps = stats.fps
+                presentedTotal = stats.framesTotal
+                frameAgeMs = stats.frameAgeMs
+            }
             onFirstFrame = { onFirstFrame() }
         }
         surfaceHost.addView(surface)
@@ -456,6 +465,11 @@ class MainActivity : Activity() {
         surface.session = null
         surface.alpha = 0f
         running = false
+        presentedFps = 0
+        presentedTotal = 0
+        frameAgeMs = 0
+        engineFps = 0.0
+        engineRate.reset()
         if (showToast) toast("Companion stopped")
     }
 
@@ -482,6 +496,12 @@ class MainActivity : Activity() {
         if (stats.frameCount > 0 && !firstFrameSeen) {
             onFirstFrame()
         }
+        // The companion's own frame counter is the only honest engine rate:
+        // the GL loop draws at the display rate whether or not frames arrive.
+        val rate = engineRate.sample(stats.frameCount, System.nanoTime())
+        if (rate != null) {
+            engineFps = rate
+        }
         val memoryMessage = RoadMemory.applyPressurePolicy(active)
         if (memoryMessage != null && System.currentTimeMillis() - lastMemoryWarningAt > 15_000) {
             lastMemoryWarningAt = System.currentTimeMillis()
@@ -492,12 +512,20 @@ class MainActivity : Activity() {
         active.pollEvent()?.let { lastEvent = it }
         statsView.text = stats.describe()
         overlay.text = buildString {
-            append("FPS ").append(fps)
+            append("FPS ").append(engineFps.toInt())
+            append(" (shown ").append(presentedFps).append(")")
             append(" | ").append(RoadStats.statusName(stats.status))
             append(" | heap ").append(stats.heapUsedMb()).append(" MB")
             append(" | hb ").append(stats.heartbeatAgeMs).append("ms")
             append(" | in ").append(stats.inputConsumed)
+            if (firstFrameSeen && engineFps < 0.5) {
+                // The last frame stays on screen, so say it is stale instead of
+                // letting a frozen picture look like a running game.
+                append(" | no frames")
+            }
             if (developerMode) {
+                append(" | age ").append(frameAgeMs).append("ms")
+                append(" | shown total ").append(presentedTotal)
                 append("\nflags 0x").append(Integer.toHexString(stats.flags))
                 append(" | last input ").append(stats.lastInputSeq)
                 append(" | audio ").append(stats.audioPushed)

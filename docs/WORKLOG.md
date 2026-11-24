@@ -363,3 +363,90 @@ The satellite is exported so another app can drive it, so any app on the device
 can take the single session and deny it to the real client. Making the service
 signature-protected would break the cross-app client this project is built to
 serve, so the choice is documented rather than hidden.
+
+## M4 - Commands that do something (finding M4)
+
+### Finding
+
+The command ring was plumbed end to end but almost nothing on the far side had
+an effect. `CMD_SET_RENDER_DISTANCE` read the value and threw it away
+(`let _ = command.value;`), `CMD_SET_SAFE_MODE` only handled the "on" direction
+and the UI told the user "Safe Mode can only be cleared by restarting the
+companion", `CMD_PATCH_OFFSET` was never handled at all, and the asset stream
+wrote chunks that no assembler ever read: `RoadAssets` sent `offset` in the
+command value and 232 raw bytes, while `AssetAssembler` wanted an asset id, a
+chunk index, a chunk count and a CRC. The two implementations never met.
+
+`RoadAssets.describe()` still reported "2260/2260 chunks accepted", which only
+meant the ring had room. Nothing in the 32-bit process had looked at the bytes.
+
+### What changed
+
+* **One patch registry.** `runtime/patch.rs` holds a fixed-capacity,
+  allocation-free name-to-address table. It rejects empty names, names longer
+  than 63 bytes, non-printable bytes, a zero address and any address above
+  `u32::MAX` - a 64-bit pointer in a 32-bit process is a crash waiting to happen.
+  The `road_patch_*` C functions now delegate to it (they used to own a
+  `BTreeMap`), so `road_patch_lookup` sees offsets that arrived over IPC, which
+  is what the hook layer reads.
+* **Testable command dispatch.** The loop body became
+  `CommandHandler::handle(&Command, &Region, &mut Scene)`, so a command can be
+  applied to a real region in a unit test and the effect asserted. Twelve tests
+  cover it, including one that pushes through the ring.
+* **Commands now apply.** Render distance clamps to 2..32 and redraws the demo
+  grid at that density; safe mode toggles both ways; shaders toggle both ways;
+  each logs an event. The RENDER button in the UI cycles 4/8/12/16/24/32 and the
+  change is visible in the streamed frame.
+* **Asset streams complete.** The wire format is now `BEGIN` (id and chunk
+  count), `CHUNK` (id and index plus up to 192 bytes), `COMMIT` (expected bytes
+  plus the CRC32 of the whole payload). The companion assembles into a
+  preallocated slot vector and publishes `asset_bytes`, `asset_crc` and an
+  `ASSET_STATUS_*` code in the header. The UI polls the verdict, so the ASSETS
+  button reports what the 32-bit process proved it assembled.
+
+### Verification
+
+| Suite | Command | Result |
+| --- | --- | --- |
+| Rust | `cargo test --workspace` | 126 passed, 0 failed (was 105) |
+| C++ host | `scripts/run_host_tests.sh` | 79 cases, 0 failures |
+| Kotlin core | `:road-loader-core:testDebugUnitTest` | 30 passed, 0 failed |
+| ABI | `static_assert(sizeof(RoadStats) == 200)` | `road_stats_size()` agrees at runtime |
+
+New tests: `PatchRegistry` (8), `CommandHandler` (12), render distance grid
+density, `AssetAssembler::begin` (2), `RoadAssetsTest` (5), asset fields in
+`RoadStatsTest` (2).
+
+### Device run (Mobilebox, Android 14 arm64, SwiftShader)
+
+`RoadStats` grew from 184 to 200 bytes, so both APKs were rebuilt and
+reinstalled. Everything below was read off the phone, not inferred:
+
+| Step | Device output |
+| --- | --- |
+| `LAUNCH 32-BIT` | `Streaming frames from :road32.`, `pid 1933`, `running`, `hb 13ms`, `self-test 0x8000001f` |
+| `RENDER` x2 | status `render distance 12 chunks`, and the streamed grid is visibly denser |
+| `ASSETS` | `sent 512 KiB in 216 ms (2.3 MiB/s), 2733/2733 commands queued` and `assets ok: 512 KiB crc 0x34bd30ad` |
+| stats block | `assets 512 KiB ok` |
+| `SHADERS` | `flags 0x10` -> `flags 0x0` |
+| `SAFE MODE` x2 | `flags 0x1` -> `flags 0x0`, events `safe mode on` then `safe mode off` |
+| `STOP` | overlay `companion stopped`, counters stop advancing |
+
+The CRC is the check that matters: `zlib.crc32` of the same payload computed
+outside the app is `0x34bd30ad`, so the number on screen is the 32-bit process
+reporting bytes it actually assembled, not a queue-depth self-report.
+
+Screenshots: `docs/screenshots/m4-render-distance.jpg` (12 chunks) and
+`docs/screenshots/m4-asset-verdict.jpg` (verified asset).
+
+The run also exposed a UI wart: `STOP` left the last stats snapshot on screen,
+so a stopped companion looked like a live one. `stopCompanion` now clears the
+block along with the session.
+
+### NOT RUN
+
+* Chunk meshing, physics and entity hooks still have no game-side anchor: the
+  offsets must come from a real `libminecraftpe.so`, and `CMD_PATCH_OFFSET` is
+  the path that will carry them once a scanner resolves them on device.
+* The satellite refuses to install on a 64-bit-only device; still no device to
+  exercise that path.

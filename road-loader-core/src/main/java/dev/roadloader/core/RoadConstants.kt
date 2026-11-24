@@ -34,6 +34,33 @@ object RoadConstants {
     const val CMD_SET_SHADERS = 7
     const val CMD_SET_SAFE_MODE = 8
 
+    /** Opens an asset stream: value = (asset id shl 32) or chunk count. */
+    const val CMD_ASSET_BEGIN = 9
+
+    /**
+     * Ends an asset stream: value = (asset id shl 32) or expected bytes,
+     * payload = 4-byte little-endian CRC32 of the whole asset.
+     */
+    const val CMD_ASSET_COMMIT = 10
+
+    /** Payload bytes per asset chunk, matching `ASSET_CHUNK_DATA` in assets.rs. */
+    const val ASSET_CHUNK_BYTES = 192
+
+    const val ASSET_STATUS_NONE = 0
+    const val ASSET_STATUS_PENDING = 1
+    const val ASSET_STATUS_OK = 2
+    const val ASSET_STATUS_EMPTY = 3
+    const val ASSET_STATUS_RANGE = 4
+    const val ASSET_STATUS_CHECKSUM = 5
+    const val ASSET_STATUS_TOTAL = 6
+    const val ASSET_STATUS_DUPLICATE = 7
+    const val ASSET_STATUS_TOO_LARGE = 8
+    const val ASSET_STATUS_CRC_MISMATCH = 9
+    const val ASSET_STATUS_LENGTH_MISMATCH = 10
+    const val ASSET_STATUS_NO_BEGIN = 11
+    const val ASSET_STATUS_INCOMPLETE = 12
+    const val ASSET_STATUS_BAD_TOTAL = 13
+
     const val FRAME_SLOT_COUNT = 3
 
     /** The only pixel format the companion publishes: 8-bit RGBA, 4 bytes/px. */
@@ -97,5 +124,8 @@ object RoadConstants {
     const val STATS_AUDIO_CONSUMED = 29
     const val STATS_AUDIO_DROPPED = 30
     const val STATS_LAST_INPUT_KIND = 31
-    const val STATS_LENGTH = 32
+    const val STATS_ASSET_BYTES = 32
+    const val STATS_ASSET_CRC = 33
+    const val STATS_ASSET_STATUS = 34
+    const val STATS_LENGTH = 35
 }

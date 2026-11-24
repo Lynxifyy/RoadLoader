@@ -57,6 +57,7 @@ class MainActivity : Activity() {
     private var heartbeatLost = false
     private var shadersEnabled = true
     private var safeMode = false
+    private var renderDistance = 4
     private var developerMode = false
     private var companionAbi: String? = null
     private var companionIs64Bit = false
@@ -242,6 +243,7 @@ class MainActivity : Activity() {
             buttonRow(
                 button("Docs") { openDocs() },
                 button("About") { showAbout() },
+                button("Render") { cycleRenderDistance() },
             ),
         )
 
@@ -483,6 +485,10 @@ class MainActivity : Activity() {
         session = null
         surface.session = null
         surface.alpha = 0f
+        overlay.text = "companion stopped"
+        // The last poll's numbers would otherwise look live under the stopped
+        // banner, so the block is cleared with the session.
+        statsView.text = ""
         running = false
         presentedFps = 0
         presentedTotal = 0
@@ -623,12 +629,20 @@ class MainActivity : Activity() {
 
     private fun toggleSafeMode() {
         safeMode = !safeMode
-        if (safeMode) {
-            session?.setSafeMode(true)
-            toast("Safe Mode requested")
-        } else {
-            toast("Safe Mode can only be cleared by restarting the companion")
+        session?.setSafeMode(safeMode)
+        toast(if (safeMode) "Safe Mode on" else "Safe Mode off")
+    }
+
+    /** Steps the companion's render distance through the values a device can hold. */
+    private fun cycleRenderDistance() {
+        val active = session ?: run {
+            toast("Launch the companion first")
+            return
         }
+        val next = RENDER_STEPS[(RENDER_STEPS.indexOf(renderDistance) + 1) % RENDER_STEPS.size]
+        renderDistance = next
+        active.setRenderDistance(next)
+        statusView.text = "render distance $next chunks"
     }
 
     private fun streamAssets() {
@@ -639,7 +653,13 @@ class MainActivity : Activity() {
         val payload = RoadAssets.samplePayload(512 * 1024)
         Thread {
             val result = RoadAssets.preload(active, payload)
-            runOnUiThread { statusView.text = result.describe() }
+            val verdict = RoadAssets.awaitVerdict(active)
+            val summary = if (verdict.assetStatus == RoadConstants.ASSET_STATUS_OK) {
+                "assets ok: ${verdict.assetBytes / 1024} KiB crc 0x${verdict.assetCrc.toString(16)}"
+            } else {
+                "assets ${RoadStats.assetStatusName(verdict.assetStatus)}"
+            }
+            runOnUiThread { statusView.text = "${result.describe()}\n$summary" }
         }.start()
     }
 
@@ -692,5 +712,8 @@ class MainActivity : Activity() {
         private const val SATELLITE_PACKAGE = "com.caramel.roadloader.satellite"
         private const val SATELLITE_SERVICE = "$SATELLITE_PACKAGE.SatelliteService"
         private const val DOCS_URL = "https://lynxifyy.github.io/RoadLoader/"
+
+        /** Render distances the RENDER button cycles through. */
+        private val RENDER_STEPS = intArrayOf(4, 8, 12, 16, 24, 32)
     }
 }

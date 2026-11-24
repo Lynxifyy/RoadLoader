@@ -31,6 +31,44 @@ pub enum AssetError {
 /// Maximum size of a single streamed asset (texture atlas / sound bank).
 pub const MAX_ASSET_BYTES: usize = 64 * 1024 * 1024;
 
+/// Largest chunk count accepted by [`CMD_ASSET_BEGIN`]. Bounds the bookkeeping
+/// vector a hostile or confused sender can make the companion allocate.
+///
+/// [`CMD_ASSET_BEGIN`]: crate::ipc::layout::CMD_ASSET_BEGIN
+pub const MAX_ASSET_CHUNKS: u32 = 16 * 1024;
+
+/// Published in the header so the 64-bit UI can poll the stream outcome.
+pub const ASSET_STATUS_NONE: u32 = 0;
+pub const ASSET_STATUS_PENDING: u32 = 1;
+pub const ASSET_STATUS_OK: u32 = 2;
+pub const ASSET_STATUS_EMPTY: u32 = 3;
+pub const ASSET_STATUS_RANGE: u32 = 4;
+pub const ASSET_STATUS_CHECKSUM: u32 = 5;
+pub const ASSET_STATUS_TOTAL: u32 = 6;
+pub const ASSET_STATUS_DUPLICATE: u32 = 7;
+pub const ASSET_STATUS_TOO_LARGE: u32 = 8;
+/// The CRC the UI sent at commit did not match the staged bytes.
+pub const ASSET_STATUS_CRC_MISMATCH: u32 = 9;
+/// The UI committed a different length than the chunks added up to.
+pub const ASSET_STATUS_LENGTH_MISMATCH: u32 = 10;
+/// A chunk or commit arrived without a `CMD_ASSET_BEGIN`.
+pub const ASSET_STATUS_NO_BEGIN: u32 = 11;
+/// The stream ended before every chunk arrived.
+pub const ASSET_STATUS_INCOMPLETE: u32 = 12;
+/// `CMD_ASSET_BEGIN` asked for an impossible chunk count.
+pub const ASSET_STATUS_BAD_TOTAL: u32 = 13;
+
+pub fn status_code(error: AssetError) -> u32 {
+    match error {
+        AssetError::EmptyChunk => ASSET_STATUS_EMPTY,
+        AssetError::IndexOutOfRange => ASSET_STATUS_RANGE,
+        AssetError::ChecksumMismatch => ASSET_STATUS_CHECKSUM,
+        AssetError::InconsistentTotal => ASSET_STATUS_TOTAL,
+        AssetError::DuplicateChunk => ASSET_STATUS_DUPLICATE,
+        AssetError::TooLarge => ASSET_STATUS_TOO_LARGE,
+    }
+}
+
 /// Splits `bytes` into chunks. Returns an empty vector for an empty asset.
 pub fn chunk_asset(asset_id: u32, bytes: &[u8]) -> Vec<AssetChunk> {
     if bytes.is_empty() {
@@ -63,6 +101,17 @@ pub struct AssetAssembler {
 impl AssetAssembler {
     pub fn new(asset_id: u32) -> Self {
         Self { asset_id, ..Default::default() }
+    }
+
+    /// Opens an assembler for a known chunk count, so the bookkeeping vector is
+    /// allocated once up front instead of on the first chunk.
+    pub fn begin(asset_id: u32, total: u32) -> Self {
+        Self {
+            asset_id,
+            total,
+            chunks: if total == 0 { Vec::new() } else { vec![None; total as usize] },
+            ..Default::default()
+        }
     }
 
     pub fn push(&mut self, chunk: &AssetChunk) -> Result<Option<Vec<u8>>, AssetError> {
@@ -139,6 +188,26 @@ mod tests {
         assert_eq!(assembled.as_deref(), Some(payload.as_slice()));
         assert_eq!(assembler.received(), 6);
         assert_eq!(assembler.bytes(), 1000);
+    }
+
+    #[test]
+    fn begin_preallocates_the_expected_chunk_count() {
+        let payload: Vec<u8> = (0..400u32).map(|value| value as u8).collect();
+        let chunks = chunk_asset(9, &payload);
+        let mut assembler = AssetAssembler::begin(9, chunks.len() as u32);
+        assert_eq!(assembler.total(), chunks.len() as u32);
+        let mut result = None;
+        for chunk in &chunks {
+            result = assembler.push(chunk).expect("push");
+        }
+        assert_eq!(result.as_deref(), Some(payload.as_slice()));
+    }
+
+    #[test]
+    fn begin_with_the_wrong_chunk_count_is_rejected() {
+        let chunks = chunk_asset(9, &[3u8; 400]);
+        let mut assembler = AssetAssembler::begin(9, chunks.len() as u32 + 1);
+        assert_eq!(assembler.push(&chunks[0]), Err(AssetError::InconsistentTotal));
     }
 
     #[test]

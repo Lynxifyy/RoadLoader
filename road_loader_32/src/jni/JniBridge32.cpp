@@ -78,7 +78,7 @@ std::string toString(JNIEnv* env, jstring value) {
 }
 
 void fillStats(JNIEnv* env, jlongArray out, const RoadStats& stats) {
-  jlong values[32] = {0};
+  jlong values[35] = {0};
   values[0] = stats.status;
   values[1] = stats.flags;
   values[2] = stats.pid;
@@ -111,7 +111,10 @@ void fillStats(JNIEnv* env, jlongArray out, const RoadStats& stats) {
   values[29] = stats.audio_consumed;
   values[30] = stats.audio_dropped;
   values[31] = stats.last_input_kind;
-  env->SetLongArrayRegion(out, 0, 32, values);
+  values[32] = stats.asset_bytes;
+  values[33] = stats.asset_crc;
+  values[34] = stats.asset_status;
+  env->SetLongArrayRegion(out, 0, 35, values);
 }
 
 struct ElfSummary {

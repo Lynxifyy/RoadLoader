@@ -37,7 +37,14 @@ pub struct Scene {
     cursor_active: bool,
     self_test: u32,
     safe_mode: bool,
+    render_distance: u32,
 }
+
+/// Chunk rows the demo grid draws at the default render distance.
+pub const DEFAULT_RENDER_DISTANCE: u32 = 9;
+/// Accepted range for `CMD_SET_RENDER_DISTANCE`.
+pub const MIN_RENDER_DISTANCE: u32 = 2;
+pub const MAX_RENDER_DISTANCE: u32 = 32;
 
 impl Scene {
     pub fn new(width: u32, height: u32, safe_mode: bool) -> Self {
@@ -51,6 +58,7 @@ impl Scene {
             cursor_active: false,
             self_test: 0,
             safe_mode,
+            render_distance: DEFAULT_RENDER_DISTANCE,
         }
     }
 
@@ -67,6 +75,21 @@ impl Scene {
     /// Enables the reduced-effects path used by "Safe Mode".
     pub fn set_safe_mode(&mut self, enabled: bool) {
         self.safe_mode = enabled;
+    }
+
+    pub fn safe_mode(&self) -> bool {
+        self.safe_mode
+    }
+
+    /// Sets how many chunk cells the demo grid draws. Clamped, so a bad value
+    /// from the UI cannot ask for a million lines.
+    pub fn set_render_distance(&mut self, distance: u32) -> u32 {
+        self.render_distance = distance.clamp(MIN_RENDER_DISTANCE, MAX_RENDER_DISTANCE);
+        self.render_distance
+    }
+
+    pub fn render_distance(&self) -> u32 {
+        self.render_distance
     }
 
     /// Renders one frame into `buf` and returns the time it took.
@@ -112,7 +135,7 @@ impl Scene {
     fn draw_grid(&self, pixels: &mut [u32]) {
         let width = self.width as usize;
         let height = self.height as usize;
-        let step = (height / 9).max(24);
+        let step = (height / self.render_distance as usize).max(8);
         for y in (0..height).step_by(step) {
             let row = y * width;
             for x in 0..width {
@@ -269,6 +292,25 @@ mod tests {
         assert!(buffer.chunks_exact(4).all(|pixel| pixel[3] == 255));
         // The frame is not uniformly black.
         assert!(buffer.chunks_exact(4).any(|pixel| pixel[0] > 8 || pixel[1] > 8));
+    }
+
+    #[test]
+    fn render_distance_changes_the_grid_and_is_clamped() {
+        let mut scene = Scene::new(240, 160, false);
+        assert_eq!(scene.render_distance(), DEFAULT_RENDER_DISTANCE);
+        assert_eq!(scene.set_render_distance(24), 24);
+        assert_eq!(scene.set_render_distance(0), MIN_RENDER_DISTANCE);
+        assert_eq!(scene.set_render_distance(1_000), MAX_RENDER_DISTANCE);
+        let lit = |scene: &Scene| {
+            let mut pixels = vec![0u32; 240 * 160];
+            scene.draw_grid(&mut pixels);
+            pixels.iter().filter(|pixel| **pixel != 0).count()
+        };
+        scene.set_render_distance(4);
+        let few = lit(&scene);
+        scene.set_render_distance(32);
+        let many = lit(&scene);
+        assert!(many > few, "expected a denser grid at 32: {many} vs {few}");
     }
 
     #[test]

@@ -72,6 +72,47 @@ class RoadStatsTest {
     }
 
     @Test
+    fun assetVerdictIsDecoded() {
+        val values = LongArray(RoadConstants.STATS_LENGTH)
+        values[RoadConstants.STATS_ASSET_BYTES] = 512 * 1024
+        values[RoadConstants.STATS_ASSET_CRC] = 0xdeadbeefL
+        values[RoadConstants.STATS_ASSET_STATUS] = RoadConstants.ASSET_STATUS_OK.toLong()
+        val decoded = RoadStats(values)
+        assertEquals(512 * 1024L, decoded.assetBytes)
+        assertEquals(0xdeadbeefL, decoded.assetCrc)
+        assertEquals(RoadConstants.ASSET_STATUS_OK, decoded.assetStatus)
+        assertTrue(decoded.describe().contains("assets 512 KiB ok"))
+    }
+
+    @Test
+    fun assetStatusNamesCoverEveryCode() {
+        val codes = listOf(
+            RoadConstants.ASSET_STATUS_NONE,
+            RoadConstants.ASSET_STATUS_PENDING,
+            RoadConstants.ASSET_STATUS_OK,
+            RoadConstants.ASSET_STATUS_EMPTY,
+            RoadConstants.ASSET_STATUS_RANGE,
+            RoadConstants.ASSET_STATUS_CHECKSUM,
+            RoadConstants.ASSET_STATUS_TOTAL,
+            RoadConstants.ASSET_STATUS_DUPLICATE,
+            RoadConstants.ASSET_STATUS_TOO_LARGE,
+            RoadConstants.ASSET_STATUS_CRC_MISMATCH,
+            RoadConstants.ASSET_STATUS_LENGTH_MISMATCH,
+            RoadConstants.ASSET_STATUS_NO_BEGIN,
+            RoadConstants.ASSET_STATUS_INCOMPLETE,
+            RoadConstants.ASSET_STATUS_BAD_TOTAL,
+        )
+        assertEquals(codes.size, codes.toSet().size)
+        codes.forEach { code ->
+            assertFalse(
+                "code $code has no name",
+                RoadStats.assetStatusName(code).startsWith("status "),
+            )
+        }
+        assertEquals("status 99", RoadStats.assetStatusName(99))
+    }
+
+    @Test
     fun heapHelpersRoundDownToMegabytes() {
         val almostTwoMb = 2L * 1024 * 1024 - 1
         assertEquals(1, stats(heapUsed = almostTwoMb).heapUsedMb())

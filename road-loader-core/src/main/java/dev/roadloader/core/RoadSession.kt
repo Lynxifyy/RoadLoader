@@ -144,6 +144,20 @@ class RoadSession private constructor(
         pushCommand(RoadConstants.CMD_SET_RENDER_DISTANCE, chunks.toLong())
     }
 
+    /**
+     * Hands a resolved symbol address to the companion. Rejected locally when
+     * the address cannot exist in a 32-bit process, so a 64-bit pointer from a
+     * confused caller never reaches the hook layer.
+     */
+    fun patchOffset(name: String, address: Long): Boolean {
+        if (address <= 0 || address > 0xFFFF_FFFFL) return false
+        return pushCommand(
+            RoadConstants.CMD_PATCH_OFFSET,
+            address,
+            name.toByteArray(Charsets.UTF_8),
+        )
+    }
+
     fun duplicateFd(): Int = if (closed) -1 else NativeHost.duplicateFd(handle)
 
     override fun close() {

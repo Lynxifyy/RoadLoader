@@ -29,7 +29,7 @@ mod util;
 use core::alloc::Layout;
 use core::ffi::{c_char, c_void};
 use core::ptr;
-use std::collections::BTreeMap;
+use runtime::patch::{PatchError, PatchRegistry};
 use std::ffi::CStr;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -79,7 +79,7 @@ pub struct HostSession {
 }
 
 static COMPANION: OnceLock<Mutex<Option<Arc<Region>>>> = OnceLock::new();
-static PATCHES: OnceLock<Mutex<BTreeMap<String, usize>>> = OnceLock::new();
+static PATCHES: OnceLock<Mutex<PatchRegistry>> = OnceLock::new();
 static INPUT_SINK: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 /// True when the game hooks own the input ring instead of the demo loop.
@@ -91,8 +91,48 @@ fn companion_slot() -> &'static Mutex<Option<Arc<Region>>> {
     COMPANION.get_or_init(|| Mutex::new(None))
 }
 
-fn patches() -> &'static Mutex<BTreeMap<String, usize>> {
-    PATCHES.get_or_init(|| Mutex::new(BTreeMap::new()))
+fn patches() -> &'static Mutex<PatchRegistry> {
+    PATCHES.get_or_init(|| Mutex::new(PatchRegistry::new()))
+}
+
+/// Records a resolved offset in the one registry the hook layer reads.
+pub fn apply_patch(name: &str, address: u64) -> Result<bool, PatchError> {
+    match patches().lock() {
+        Ok(mut patches) => patches.apply(name, address),
+        Err(poisoned) => poisoned.into_inner().apply(name, address),
+    }
+}
+
+/// Returns the address recorded for `name`, if any.
+pub fn lookup_patch(name: &str) -> Option<u64> {
+    match patches().lock() {
+        Ok(patches) => patches.resolve(name),
+        Err(poisoned) => poisoned.into_inner().resolve(name),
+    }
+}
+
+pub fn patch_count() -> usize {
+    match patches().lock() {
+        Ok(patches) => patches.len(),
+        Err(poisoned) => poisoned.into_inner().len(),
+    }
+}
+
+/// Serialises the tests that touch the process-wide registry.
+#[cfg(test)]
+pub(crate) fn patch_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    match LOCK.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+pub fn clear_patches() {
+    match patches().lock() {
+        Ok(mut patches) => patches.clear(),
+        Err(poisoned) => poisoned.into_inner().clear(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -865,21 +905,20 @@ fn patch_name(name: *const c_char) -> Option<String> {
     Some(name.to_string_lossy().into_owned())
 }
 
-/// Records a resolved game offset under `name`. Returns 0 on success.
+/// Records a resolved game offset under `name`. Returns 0 on success,
+/// -1 for a missing or malformed name, -2 for an address a 32-bit process
+/// cannot hold, -3 when the registry is full.
 #[no_mangle]
 pub extern "C" fn road_patch_offset(name: *const c_char, address: usize) -> i32 {
     let Some(name) = patch_name(name) else {
         return -1;
     };
-    if address == 0 {
-        return -2;
+    match apply_patch(&name, address as u64) {
+        Ok(_) => 0,
+        Err(PatchError::EmptyName | PatchError::NameTooLong | PatchError::InvalidName) => -1,
+        Err(PatchError::InvalidAddress) => -2,
+        Err(PatchError::Full) => -3,
     }
-    let mut patches = match patches().lock() {
-        Ok(patches) => patches,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    patches.insert(name, address);
-    0
 }
 
 /// Looks a patch up; returns 0 when it is unknown.
@@ -888,29 +927,17 @@ pub extern "C" fn road_patch_lookup(name: *const c_char) -> usize {
     let Some(name) = patch_name(name) else {
         return 0;
     };
-    let patches = match patches().lock() {
-        Ok(patches) => patches,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    patches.get(&name).copied().unwrap_or(0)
+    lookup_patch(&name).unwrap_or(0) as usize
 }
 
 #[no_mangle]
 pub extern "C" fn road_patch_count() -> u32 {
-    let patches = match patches().lock() {
-        Ok(patches) => patches,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    patches.len() as u32
+    patch_count() as u32
 }
 
 #[no_mangle]
 pub extern "C" fn road_patch_clear() {
-    let mut patches = match patches().lock() {
-        Ok(patches) => patches,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    patches.clear();
+    clear_patches();
 }
 
 #[cfg(test)]
@@ -1045,13 +1072,17 @@ mod tests {
 
     #[test]
     fn patch_registry_round_trips() {
+        let _guard = patch_test_guard();
+        clear_patches();
         let name = std::ffi::CString::new("Level::tick").unwrap();
         assert_eq!(road_patch_offset(name.as_ptr(), 0x1234), 0);
         assert_eq!(road_patch_lookup(name.as_ptr()), 0x1234);
-        assert!(road_patch_count() >= 1);
+        assert_eq!(road_patch_count(), 1);
         assert_eq!(road_patch_offset(name.as_ptr(), 0), -2);
+        assert_eq!(road_patch_offset(name.as_ptr(), 0x1_0000_0000), -2);
         road_patch_clear();
         assert_eq!(road_patch_lookup(name.as_ptr()), 0);
+        assert_eq!(road_patch_count(), 0);
     }
 
     #[test]

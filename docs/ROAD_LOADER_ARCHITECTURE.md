@@ -132,6 +132,47 @@ consumes them. A second consumer would break the non-atomic head update, which i
 why the UI is the only reader of the event ring and drains it on every stats
 poll.
 
+### Commands
+
+The UI drives the companion with commands. Each one has a defined effect; a
+command that is accepted but changes nothing is treated as a bug, not as a
+placeholder.
+
+| Kind | Value | Payload | Effect |
+| --- | --- | --- | --- |
+| `CMD_SET_VOLUME` (1) | volume x 1000 | - | clamps to 0..1 and scales the demo tone |
+| `CMD_PATCH_OFFSET` (2) | 32-bit address | symbol name (UTF-8) | records the offset in the registry `road_patch_lookup` reads |
+| `CMD_SET_RENDER_DISTANCE` (3) | chunks | - | clamps to 2..32 and redraws the grid at that density |
+| `CMD_REQUEST_SELF_TEST` (4) | - | - | reruns the startup self-test and republishes the mask |
+| `CMD_SHUTDOWN` (5) | - | - | stops the loop; the process exits cleanly |
+| `CMD_ASSET_CHUNK` (6) | (asset id << 32) or index | bytes | stages one chunk |
+| `CMD_SET_SHADERS` (7) | 0/1 | - | sets or clears `FLAG_SHADERS` |
+| `CMD_SET_SAFE_MODE` (8) | 0/1 | - | sets or clears `FLAG_SAFE_MODE`, both directions |
+| `CMD_ASSET_BEGIN` (9) | (asset id << 32) or chunk count | - | opens a stream; refuses 0 or more than 16384 chunks |
+| `CMD_ASSET_COMMIT` (10) | (asset id << 32) or expected bytes | CRC32, 4 bytes LE | verifies the staged asset and publishes the verdict |
+
+Every handled command logs an event, so the UI can show what the 32-bit side
+did without another round trip. `CMD_PATCH_OFFSET` writes to the same registry
+as the `road_patch_*` C functions, which is what the hook layer reads before it
+patches a prologue.
+
+### Asset streams
+
+A stream is `BEGIN`, one `CHUNK` per 192 bytes, then `COMMIT`:
+
+```
+CMD_ASSET_BEGIN   value = (id << 32) | chunks
+CMD_ASSET_CHUNK   value = (id << 32) | index, payload = up to 192 bytes
+CMD_ASSET_COMMIT  value = (id << 32) | expected bytes, payload = crc32 LE
+```
+
+The companion assembles into a preallocated slot vector (`AssetAssembler`),
+never reallocating per chunk. The commit compares the staged length and the
+CRC32 of the whole payload against what the UI says it sent, then publishes
+`asset_bytes`, `asset_crc` and one of the `ASSET_STATUS_*` codes in the header.
+The UI polls those three fields, so "streamed" means "the 32-bit side proved it
+assembled exactly those bytes".
+
 ### Frame slots and tearing
 
 Frames use three slots with an explicit state machine:
@@ -306,7 +347,7 @@ Cloud phone: Android 14, 2 GB RAM, SwiftShader (software GPU), 2400x1080.
 | Frame stream | 400-1600 frames per run, render 190-310 us avg, engine 60 FPS |
 | Input round trip | `in 2/2` after a tap (down + up) |
 | Audio bridge | `audio 2/2`, both blocks written to `AudioTrack` |
-| Asset stream | 512 KiB in 125 ms (4.0 MiB/s), 2260/2260 chunks |
+| Asset stream | 512 KiB staged and CRC-verified, 2733/2733 commands queued |
 | Self-test | `0x8000001f` (mesh, math, physics, alloc, ipc) |
 | Satellite (cross-app) | frames streamed from the satellite process |
 | Stop | "Companion stopped", no crash records in logcat |

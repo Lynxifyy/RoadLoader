@@ -59,6 +59,9 @@ struct RoadStats {
   uint64_t crash_addr;
   uint64_t crash_pc;
   uint64_t crash_lr;
+  uint32_t asset_bytes;
+  uint32_t asset_crc;
+  uint32_t asset_status;
 };
 
 struct RoadAllocStats {
@@ -195,4 +198,4 @@ static_assert(sizeof(RoadCommand) == 256, "RoadCommand must stay 256 bytes");
 static_assert(sizeof(RoadEvent) == 256, "RoadEvent must stay 256 bytes");
 static_assert(sizeof(RoadAudioBlock) == 4096, "RoadAudioBlock must stay 4096 bytes");
 static_assert(sizeof(RoadMeshVertex) == 36, "RoadMeshVertex must stay 36 bytes");
-static_assert(sizeof(RoadStats) == 184, "RoadStats must match the Rust layout");
+static_assert(sizeof(RoadStats) == 200, "RoadStats must match the Rust layout");

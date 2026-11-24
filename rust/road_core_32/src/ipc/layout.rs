@@ -60,6 +60,11 @@ pub const CMD_SHUTDOWN: u32 = 5;
 pub const CMD_ASSET_CHUNK: u32 = 6;
 pub const CMD_SET_SHADERS: u32 = 7;
 pub const CMD_SET_SAFE_MODE: u32 = 8;
+/// Opens an asset stream: `value` = (asset id << 32) | chunk count.
+pub const CMD_ASSET_BEGIN: u32 = 9;
+/// Ends an asset stream: `value` = (asset id << 32) | expected bytes,
+/// payload = little-endian CRC32 of the whole asset.
+pub const CMD_ASSET_COMMIT: u32 = 10;
 
 /// Default ring capacities. They are powers of two and fixed for the lifetime of
 /// the region, which is what keeps the 32-bit process from growing unbounded.
@@ -263,12 +268,15 @@ pub struct RoadHeader {
     pub crash_pc: AtomicU64,
     pub crash_lr: AtomicU64,
     pub crash_message: [u8; 160],
+    pub asset_bytes: AtomicU32,
+    pub asset_crc: AtomicU32,
+    pub asset_status: AtomicU32,
     pub frame_slots: [FrameSlotHeader; FRAME_SLOT_COUNT],
     pub input_ring: RingHeader,
     pub command_ring: RingHeader,
     pub event_ring: RingHeader,
     pub audio_ring: RingHeader,
-    pub reserved: [u32; 32],
+    pub reserved: [u32; 29],
 }
 
 /// Byte offsets of every sub-region inside the mapping.

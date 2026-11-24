@@ -75,6 +75,12 @@ pub struct RoadStats {
     pub crash_addr: u64,
     pub crash_pc: u64,
     pub crash_lr: u64,
+    /// Bytes staged by the last completed asset stream.
+    pub asset_bytes: u32,
+    /// CRC32 of the staged asset, as computed by the companion.
+    pub asset_crc: u32,
+    /// One of the `ASSET_STATUS_*` codes in [`crate::assets`].
+    pub asset_status: u32,
 }
 
 /// Errors returned when attaching to a foreign region.
@@ -334,7 +340,19 @@ impl Region {
             crash_addr: header.crash_addr.load(Ordering::Relaxed),
             crash_pc: header.crash_pc.load(Ordering::Relaxed),
             crash_lr: header.crash_lr.load(Ordering::Relaxed),
+            asset_bytes: header.asset_bytes.load(Ordering::Relaxed),
+            asset_crc: header.asset_crc.load(Ordering::Relaxed),
+            asset_status: header.asset_status.load(Ordering::Relaxed),
         }
+    }
+
+    /// Publishes the outcome of an asset stream so the UI can poll it.
+    pub fn set_asset_result(&self, bytes: u32, crc: u32, status: u32) {
+        let header = self.header();
+        header.asset_bytes.store(bytes, Ordering::Relaxed);
+        header.asset_crc.store(crc, Ordering::Relaxed);
+        // Release: the byte count and CRC must be visible before the status.
+        header.asset_status.store(status, Ordering::Release);
     }
 
     // ---- frame triple buffer --------------------------------------------
